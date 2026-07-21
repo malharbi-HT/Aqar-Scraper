@@ -13,15 +13,17 @@ import csv
 import time
 import re
 import os
-from urllib.parse import urljoin
+from urllib.parse import urljoin, unquote
 
 BASE_URL = "https://sa.aqar.fm"
 
 # ==== عدّل هذي القائمة حسب احتياجك (مدينة/نوع عقار/عدد صفحات) ====
+# نسحب منطقة وحدة كاملة بكل مرة عشان نتحكم بالوقت والموارد.
+# بعد ما تخلص شمال الرياض، غيّر الرابط التالي لمنطقة ثانية (شرق-الرياض، غرب-الرياض...)
 LIST_PAGES = [
-    "https://sa.aqar.fm/شقق-للبيع/الرياض",
+    "https://sa.aqar.fm/شقق-للبيع/الرياض/شمال-الرياض",
 ]
-MAX_PAGES_PER_CATEGORY = 5   # كم صفحة نسحب من كل تصنيف
+MAX_PAGES_PER_CATEGORY = 200   # سقف أعلى من الحاجة الفعلية؛ السكربت يتوقف تلقائيًا عند آخر صفحة فعلية
 
 # مسارات محظورة صراحة بـ robots.txt -- لازم نتجنبها دائمًا
 FORBIDDEN_PATH_PREFIXES = [
@@ -56,6 +58,16 @@ IMAGE_BASE_URL = "https://images.aqar.fm/webp/750x0/props/"
 
 def is_forbidden(path: str) -> bool:
     return any(path.startswith(p) for p in FORBIDDEN_PATH_PREFIXES)
+
+
+def parse_city_direction_from_url(url):
+    """يستخرج اسم المدينة والاتجاه من مسار الرابط نفسه (أوثق من الـ JSON).
+    مثال: /شقق-للبيع/الرياض/شمال-الرياض/حي-الياسمين/... -> (الرياض, شمال الرياض)"""
+    path = unquote(url.replace(BASE_URL, "")).strip("/")
+    parts = path.split("/")
+    city = parts[1].replace("-", " ") if len(parts) > 1 else None
+    direction = parts[2].replace("-", " ") if len(parts) > 2 else None
+    return city, direction
 
 
 def extract_listing_id(url: str) -> str:
@@ -237,8 +249,6 @@ def scrape_listing_detail(url):
         data["livings"] = listing.get("livings")
         data["age_years"] = listing.get("age")
         data["district"] = listing.get("district")
-        data["city"] = listing.get("city")
-        data["direction"] = listing.get("direction")
         data["description"] = listing.get("content")
 
         loc = listing.get("location")
@@ -265,6 +275,9 @@ def scrape_listing_detail(url):
         data["views"] = listing.get("views")
 
     # --- خطة احتياطية: لو فشل استخراج الـ JSON بالكامل، نرجع لـ meta tags ---
+    # city/direction تُستخرج دائمًا من الرابط، بغض النظر عن نجاح تحليل JSON
+    data["city"], data["direction"] = parse_city_direction_from_url(url)
+
     if not listing:
         soup = BeautifulSoup(html, "html.parser")
         og_title = soup.find("meta", property="og:title")
