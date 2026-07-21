@@ -124,17 +124,61 @@ def extract_balanced_json(text, anchor):
 
 
 def extract_listing_json(html):
-    """يستخرج كائن 'listing' الكامل من بيانات RSC المضمّنة بالصفحة. ترجع dict أو None."""
+    """يستخرج كائن 'listing' الصحيح (بيانات العقار) من بيانات RSC المضمّنة بالصفحة.
+    الصفحة قد تحتوي أكثر من كائن اسمه 'listing' (مثلاً قاموس ترجمة الواجهة)،
+    فنفحص كل المطابقات ونختار اللي فيه حقول بيانات العقار الفعلية."""
     rsc_text = extract_rsc_text(html)
     if not rsc_text:
         return None
-    json_str = extract_balanced_json(rsc_text, '"listing":{')
-    if not json_str:
+
+    search_from = 0
+    while True:
+        idx = rsc_text.find('"listing":{', search_from)
+        if idx == -1:
+            return None
+        start = rsc_text.find("{", idx)
+        candidate = _extract_balanced_from(rsc_text, start)
+        if candidate:
+            try:
+                parsed = json.loads(candidate)
+                # كائن بيانات العقار الحقيقي فيه هذي الحقول، عكس قاموس الترجمة
+                if isinstance(parsed, dict) and (
+                    "price" in parsed or "imgs" in parsed or "rega_total_price" in parsed
+                ):
+                    return parsed
+            except json.JSONDecodeError:
+                pass
+        search_from = idx + 1
+
+
+def _extract_balanced_from(text, start):
+    """نفس منطق extract_balanced_json لكن يبدأ من موضع '{' معروف مباشرة."""
+    if start == -1:
         return None
-    try:
-        return json.loads(json_str)
-    except json.JSONDecodeError:
-        return None
+    depth = 0
+    in_string = False
+    escape = False
+    i = start
+    while i < len(text):
+        c = text[i]
+        if in_string:
+            if escape:
+                escape = False
+            elif c == "\\":
+                escape = True
+            elif c == '"':
+                in_string = False
+        else:
+            if c == '"':
+                in_string = True
+            elif c == "{":
+                depth += 1
+            elif c == "}":
+                depth -= 1
+                if depth == 0:
+                    return text[start:i + 1]
+        i += 1
+    return None
 
 
 def collect_listing_links_from_list_page(url: str):
