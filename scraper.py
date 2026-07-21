@@ -1,0 +1,294 @@
+"""
+سكربت سحب بيانات العقارات من aqar.fm
+- يسحب صفحات القوائم (listing pages) لاستخراج روابط الإعلانات
+- يفتح كل إعلان ويحاول استخراج البيانات الكاملة (بما فيها الصور والإحداثيات)
+  عبر قراءة الـ JSON المضمّن بالصفحة (__NEXT_DATA__) إن وجد، وإلا يرجع لـ HTML parsing
+- يحفظ النتائج بملف CSV، ويتجنب تكرار الإعلانات (dedupe حسب رقم الإعلان الفريد)
+"""
+
+import requests
+from bs4 import BeautifulSoup
+import json
+import csv
+import time
+import re
+import os
+from urllib.parse import urljoin
+
+BASE_URL = "https://sa.aqar.fm"
+
+# ==== عدّل هذي القائمة حسب احتياجك (مدينة/نوع عقار/عدد صفحات) ====
+LIST_PAGES = [
+    "https://sa.aqar.fm/شقق-للبيع/الرياض",
+]
+MAX_PAGES_PER_CATEGORY = 5   # كم صفحة نسحب من كل تصنيف
+
+# مسارات محظورة صراحة بـ robots.txt -- لازم نتجنبها دائمًا
+FORBIDDEN_PATH_PREFIXES = [
+    "/contact-us", "/اتصل-بنا", "/معلومات-المعلن", "/contact_user",
+    "/send_iphone", "/send_android", "/download_app",
+    "/search/", "/regions/", "/view/", "/map/", "/map-ad/",
+    "/district/", "/direction/", "/city/",
+    "/add-listing/", "/add-rega-listing/", "/editlisting/",
+    "/user/bookings", "/financing/application", "/login",
+    "/graphql", "/auth-graphql",
+]
+
+HEADERS = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+                  "(KHTML, like Gecko) Chrome/124.0 Safari/537.36",
+    "Accept-Language": "ar,en;q=0.8",
+}
+
+DATA_DIR = os.path.join(os.path.dirname(__file__), "data")
+OUTPUT_CSV = os.path.join(DATA_DIR, "listings.csv")
+
+CSV_FIELDS = [
+    "listing_id", "url", "title", "price", "area_sqm",
+    "rooms", "bathrooms", "livings", "age_years", "district", "city", "direction",
+    "description", "latitude", "longitude", "images", "images_count",
+    "advertiser_name", "advertiser_company", "advertiser_type",
+    "created_at", "published_at", "last_update", "views", "date_scraped",
+]
+
+IMAGE_BASE_URL = "https://images.aqar.fm/webp/750x0/props/"
+
+
+def is_forbidden(path: str) -> bool:
+    return any(path.startswith(p) for p in FORBIDDEN_PATH_PREFIXES)
+
+
+def extract_listing_id(url: str) -> str:
+    """الرقم التعريفي دائمًا آخر أرقام بنهاية الرابط"""
+    match = re.search(r"-(\d+)/?$", url)
+    return match.group(1) if match else url
+
+
+def get_soup(url: str):
+    resp = requests.get(url, headers=HEADERS, timeout=15)
+    resp.raise_for_status()
+    return BeautifulSoup(resp.text, "html.parser")
+
+
+NEXT_F_PATTERN = re.compile(r'self\.__next_f\.push\(\[1,"((?:[^"\\]|\\.)*)"\]\)', re.DOTALL)
+
+
+def _unescape_js_string(raw):
+    """يفك ترميز نص JS المهرّب (يستخدم نفس قواعد تهريب JSON)."""
+    return json.loads('"' + raw + '"')
+
+
+def extract_rsc_text(html):
+    """يجمع كل أجزاء self.__next_f.push(...) بالصفحة في نص واحد مفكوك الترميز."""
+    parts = []
+    for m in NEXT_F_PATTERN.finditer(html):
+        try:
+            parts.append(_unescape_js_string(m.group(1)))
+        except (json.JSONDecodeError, TypeError):
+            continue
+    return "".join(parts)
+
+
+def extract_balanced_json(text, anchor):
+    """يستخرج كائن JSON متوازن الأقواس يبدأ بعد أول '{' تالي لـ anchor."""
+    idx = text.find(anchor)
+    if idx == -1:
+        return None
+    start = text.find("{", idx)
+    if start == -1:
+        return None
+    depth = 0
+    in_string = False
+    escape = False
+    i = start
+    while i < len(text):
+        c = text[i]
+        if in_string:
+            if escape:
+                escape = False
+            elif c == "\\":
+                escape = True
+            elif c == '"':
+                in_string = False
+        else:
+            if c == '"':
+                in_string = True
+            elif c == "{":
+                depth += 1
+            elif c == "}":
+                depth -= 1
+                if depth == 0:
+                    return text[start:i + 1]
+        i += 1
+    return None
+
+
+def extract_listing_json(html):
+    """يستخرج كائن 'listing' الكامل من بيانات RSC المضمّنة بالصفحة. ترجع dict أو None."""
+    rsc_text = extract_rsc_text(html)
+    if not rsc_text:
+        return None
+    json_str = extract_balanced_json(rsc_text, '"listing":{')
+    if not json_str:
+        return None
+    try:
+        return json.loads(json_str)
+    except json.JSONDecodeError:
+        return None
+
+
+def collect_listing_links_from_list_page(url: str):
+    """يسحب صفحة قائمة ويرجع روابط الإعلانات + بيانات أساسية سريعة"""
+    soup = get_soup(url)
+    links = set()
+    for a in soup.select("a[href]"):
+        href = a["href"]
+        full = urljoin(BASE_URL, href)
+        path = full.replace(BASE_URL, "")
+        if is_forbidden(path):
+            continue
+        # روابط الإعلانات تنتهي برقم تعريفي طويل
+        if re.search(r"-\d{5,}/?$", full):
+            links.add(full)
+    return links
+
+
+def _fmt_timestamp(ts):
+    """يحول unix timestamp إلى تاريخ مقروء YYYY-MM-DD، أو يرجع فاضي لو غير موجود."""
+    if not ts:
+        return None
+    try:
+        return time.strftime("%Y-%m-%d", time.localtime(int(ts)))
+    except (ValueError, TypeError):
+        return None
+
+
+def scrape_listing_detail(url):
+    """يفتح صفحة إعلان مفرد ويستخرج كل بياناته من JSON المضمّن بالصفحة (RSC)."""
+    resp = requests.get(url, headers=HEADERS, timeout=15)
+    resp.raise_for_status()
+    html = resp.text
+
+    data = {
+        "listing_id": extract_listing_id(url),
+        "url": url,
+        "title": None, "price": None, "area_sqm": None,
+        "rooms": None, "bathrooms": None, "livings": None, "age_years": None,
+        "district": None, "city": None, "direction": None,
+        "description": None, "latitude": None, "longitude": None,
+        "images": None, "images_count": None,
+        "advertiser_name": None, "advertiser_company": None, "advertiser_type": None,
+        "created_at": None, "published_at": None, "last_update": None,
+        "views": None, "date_scraped": time.strftime("%Y-%m-%d"),
+    }
+
+    listing = extract_listing_json(html)
+
+    if listing:
+        data["title"] = listing.get("title")
+        data["price"] = listing.get("price") or listing.get("rega_total_price")
+        data["area_sqm"] = listing.get("area")
+        data["rooms"] = listing.get("beds")
+        data["bathrooms"] = listing.get("wc")
+        data["livings"] = listing.get("livings")
+        data["age_years"] = listing.get("age")
+        data["district"] = listing.get("district")
+        data["city"] = listing.get("city")
+        data["direction"] = listing.get("direction")
+        data["description"] = listing.get("content")
+
+        loc = listing.get("location") or {}
+        data["latitude"] = loc.get("lat")
+        data["longitude"] = loc.get("lng")
+
+        imgs = listing.get("imgs") or []
+        if imgs:
+            full_urls = [IMAGE_BASE_URL + im for im in imgs if im]
+            data["images"] = " | ".join(full_urls)
+            data["images_count"] = len(full_urls)
+
+        user = listing.get("user") or {}
+        data["advertiser_name"] = user.get("name")
+        data["advertiser_company"] = user.get("company_name")
+        data["advertiser_type"] = user.get("type")
+
+        data["created_at"] = _fmt_timestamp(listing.get("create_time"))
+        data["published_at"] = _fmt_timestamp(listing.get("published_at"))
+        data["last_update"] = _fmt_timestamp(listing.get("last_update"))
+        data["views"] = listing.get("views")
+
+    # --- خطة احتياطية: لو فشل استخراج الـ JSON بالكامل، نرجع لـ meta tags ---
+    if not listing:
+        soup = BeautifulSoup(html, "html.parser")
+        og_title = soup.find("meta", property="og:title")
+        if og_title:
+            data["title"] = og_title.get("content")
+        og_desc = soup.find("meta", property="og:description")
+        if og_desc:
+            data["description"] = og_desc.get("content")
+        og_image = soup.find("meta", property="og:image")
+        if og_image:
+            data["images"] = og_image.get("content")
+            data["images_count"] = 1
+
+    return data
+
+
+def load_existing_ids():
+    if not os.path.exists(OUTPUT_CSV):
+        return set()
+    with open(OUTPUT_CSV, newline="", encoding="utf-8-sig") as f:
+        reader = csv.DictReader(f)
+        return {row["listing_id"] for row in reader}
+
+
+def append_rows(rows):
+    os.makedirs(DATA_DIR, exist_ok=True)
+    file_exists = os.path.exists(OUTPUT_CSV)
+    with open(OUTPUT_CSV, "a", newline="", encoding="utf-8-sig") as f:
+        writer = csv.DictWriter(f, fieldnames=CSV_FIELDS)
+        if not file_exists:
+            writer.writeheader()
+        writer.writerows(rows)
+
+
+def main():
+    existing_ids = load_existing_ids()
+    print(f"عدد الإعلانات المحفوظة مسبقًا: {len(existing_ids)}")
+
+    all_links = set()
+    for base in LIST_PAGES:
+        for page_num in range(1, MAX_PAGES_PER_CATEGORY + 1):
+            page_url = base if page_num == 1 else f"{base}/{page_num}"
+            try:
+                links = collect_listing_links_from_list_page(page_url)
+            except requests.RequestException as e:
+                print(f"تخطي {page_url}: {e}")
+                continue
+            if not links:
+                break  # وصلنا آخر صفحة متاحة
+            all_links.update(links)
+            time.sleep(2)  # احترام السيرفر
+
+    new_links = [l for l in all_links if extract_listing_id(l) not in existing_ids]
+    print(f"روابط جديدة للسحب: {len(new_links)}")
+
+    new_rows = []
+    for link in new_links:
+        try:
+            row = scrape_listing_detail(link)
+            new_rows.append(row)
+            print("تم:", row["listing_id"], row.get("title"))
+        except requests.RequestException as e:
+            print(f"فشل سحب {link}: {e}")
+        time.sleep(2)  # احترام السيرفر بين الطلبات
+
+    if new_rows:
+        append_rows(new_rows)
+        print(f"تمت إضافة {len(new_rows)} إعلان جديد إلى {OUTPUT_CSV}")
+    else:
+        print("لا توجد إعلانات جديدة اليوم.")
+
+
+if __name__ == "__main__":
+    main()
