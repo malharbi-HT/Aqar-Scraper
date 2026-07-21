@@ -197,20 +197,23 @@ def scrape_listing_detail(url):
         data["direction"] = listing.get("direction")
         data["description"] = listing.get("content")
 
-        loc = listing.get("location") or {}
-        data["latitude"] = loc.get("lat")
-        data["longitude"] = loc.get("lng")
+        loc = listing.get("location")
+        if isinstance(loc, dict):
+            data["latitude"] = loc.get("lat")
+            data["longitude"] = loc.get("lng")
 
         imgs = listing.get("imgs") or []
-        if imgs:
-            full_urls = [IMAGE_BASE_URL + im for im in imgs if im]
-            data["images"] = " | ".join(full_urls)
-            data["images_count"] = len(full_urls)
+        if isinstance(imgs, list) and imgs:
+            full_urls = [IMAGE_BASE_URL + im for im in imgs if isinstance(im, str) and im]
+            if full_urls:
+                data["images"] = " | ".join(full_urls)
+                data["images_count"] = len(full_urls)
 
-        user = listing.get("user") or {}
-        data["advertiser_name"] = user.get("name")
-        data["advertiser_company"] = user.get("company_name")
-        data["advertiser_type"] = user.get("type")
+        user = listing.get("user")
+        if isinstance(user, dict):
+            data["advertiser_name"] = user.get("name")
+            data["advertiser_company"] = user.get("company_name")
+            data["advertiser_type"] = user.get("type")
 
         data["created_at"] = _fmt_timestamp(listing.get("create_time"))
         data["published_at"] = _fmt_timestamp(listing.get("published_at"))
