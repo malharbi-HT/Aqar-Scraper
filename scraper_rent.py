@@ -22,6 +22,10 @@ BASE_URL = "https://sa.aqar.fm"
 # بعد ما تخلص شمال الرياض، غيّر الرابط التالي لمنطقة ثانية (شرق-الرياض، غرب-الرياض...)
 LIST_PAGES = [
     "https://sa.aqar.fm/شقق-للإيجار/الرياض/شمال-الرياض",
+    "https://sa.aqar.fm/شقق-للإيجار/الرياض/شرق-الرياض",
+    "https://sa.aqar.fm/شقق-للإيجار/الرياض/غرب-الرياض",
+    "https://sa.aqar.fm/شقق-للإيجار/الرياض/جنوب-الرياض",
+    "https://sa.aqar.fm/شقق-للإيجار/الرياض/وسط-الرياض",
 ]
 MAX_PAGES_PER_CATEGORY = 200   # سقف أعلى من الحاجة الفعلية؛ السكربت يتوقف تلقائيًا عند آخر صفحة فعلية
 
@@ -333,6 +337,7 @@ def load_existing_ids():
 
 
 def append_rows(rows):
+    """يُبقى للتوافق، لكن الحفظ الفعلي الآن تدريجي عبر append_row"""
     os.makedirs(DATA_DIR, exist_ok=True)
     file_exists = os.path.exists(OUTPUT_CSV)
     with open(OUTPUT_CSV, "a", newline="", encoding="utf-8-sig") as f:
@@ -342,12 +347,28 @@ def append_rows(rows):
         writer.writerows(rows)
 
 
+def open_csv_writer():
+    """يفتح ملف CSV بوضع الإضافة، ويكتب العنوان لو الملف جديد.
+    يرجع (file_handle, writer) — لازم تسكر الملف يدويًا بنهاية الاستخدام."""
+    os.makedirs(DATA_DIR, exist_ok=True)
+    file_exists = os.path.exists(OUTPUT_CSV)
+    f = open(OUTPUT_CSV, "a", newline="", encoding="utf-8-sig")
+    writer = csv.DictWriter(f, fieldnames=CSV_FIELDS)
+    if not file_exists:
+        writer.writeheader()
+        f.flush()
+    return f, writer
+
+
 def main():
     existing_ids = load_existing_ids()
     print(f"عدد الإعلانات المحفوظة مسبقًا: {len(existing_ids)}")
 
     all_links = set()
+    STOP_AFTER_CONSECUTIVE_DUPLICATE_PAGES = 3  # توقف مبكر لو 3 صفحات متتالية كلها معروفة
     for base in LIST_PAGES:
+        print(f"=== تصنيف: {base} ===")
+        consecutive_all_known = 0
         for page_num in range(1, MAX_PAGES_PER_CATEGORY + 1):
             page_url = base if page_num == 1 else f"{base}/{page_num}"
             try:
@@ -356,28 +377,46 @@ def main():
                 print(f"تخطي {page_url}: {e}")
                 continue
             if not links:
-                print(f"وصلنا آخر صفحة عند صفحة {page_num - 1}، نتوقف عن هذا التصنيف")
-                break  # وصلنا آخر صفحة متاحة
-            print(f"صفحة {page_num}: لقيت {len(links)} رابط (إجمالي حتى الآن: {len(all_links) + len(links)})")
+                print(f"وصلنا آخر صفحة عند صفحة {page_num - 1}، ننتقل للتصنيف التالي")
+                break  # وصلنا آخر صفحة متاحة لهذا التصنيف
+
+            new_on_page = [l for l in links if extract_listing_id(l) not in existing_ids]
+            print(f"صفحة {page_num}: لقيت {len(links)} رابط ({len(new_on_page)} جديد، إجمالي حتى الآن: {len(all_links) + len(links)})")
             all_links.update(links)
+
+            if not new_on_page:
+                consecutive_all_known += 1
+                if consecutive_all_known >= STOP_AFTER_CONSECUTIVE_DUPLICATE_PAGES:
+                    print(f"  {STOP_AFTER_CONSECUTIVE_DUPLICATE_PAGES} صفحات متتالية بدون أي إعلان جديد -- نتوقف مبكرًا عن هذا التصنيف ونوفر وقت")
+                    break
+            else:
+                consecutive_all_known = 0  # صفحة فيها جديد ترجّع العداد صفر
+
             time.sleep(2)  # احترام السيرفر
 
     new_links = [l for l in all_links if extract_listing_id(l) not in existing_ids]
     print(f"روابط جديدة للسحب: {len(new_links)}")
 
-    new_rows = []
-    for link in new_links:
-        try:
-            row = scrape_listing_detail(link)
-            new_rows.append(row)
-            print("تم:", row["listing_id"], row.get("title"))
-        except requests.RequestException as e:
-            print(f"فشل سحب {link}: {e}")
-        time.sleep(2)  # احترام السيرفر بين الطلبات
+    # --- حفظ تدريجي: كل إعلان يُكتب بالملف فور سحبه، مو مجمّع بالنهاية ---
+    # هذا يحمي التقدم لو انقطع التشغيل لأي سبب (بدل ما نخسر كل شي)
+    f, writer = open_csv_writer()
+    saved_count = 0
+    try:
+        for link in new_links:
+            try:
+                row = scrape_listing_detail(link)
+                writer.writerow(row)
+                f.flush()  # نضمن الكتابة الفعلية على القرص فورًا
+                saved_count += 1
+                print(f"تم ({saved_count}/{len(new_links)}):", row["listing_id"], row.get("title"))
+            except requests.RequestException as e:
+                print(f"فشل سحب {link}: {e}")
+            time.sleep(2)  # احترام السيرفر بين الطلبات
+    finally:
+        f.close()
 
-    if new_rows:
-        append_rows(new_rows)
-        print(f"تمت إضافة {len(new_rows)} إعلان جديد إلى {OUTPUT_CSV}")
+    if saved_count:
+        print(f"تمت إضافة {saved_count} إعلان جديد إلى {OUTPUT_CSV}")
     else:
         print("لا توجد إعلانات جديدة اليوم.")
 
