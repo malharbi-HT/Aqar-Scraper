@@ -1,8 +1,6 @@
 name: Sale Scrape
 
 on:
-  schedule:
-    - cron: '0 0 * * *'   # يوميًا 12 منتصف الليل UTC = 3 الفجر بتوقيت السعودية
   workflow_dispatch:        # تشغيل يدوي من تبويب Actions بـ GitHub
 
 jobs:
