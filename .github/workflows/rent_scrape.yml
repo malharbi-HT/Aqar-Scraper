@@ -1,7 +1,9 @@
 name: Rent Scrape
 
 on:
-  workflow_dispatch:   # تشغيل يدوي فقط حاليًا (بدون جدولة تلقائية بعد)
+  schedule:
+    - cron: '0 2 * * *'   # يوميًا 2 صباحًا UTC = 5 الفجر بتوقيت السعودية
+  workflow_dispatch:        # تشغيل يدوي من تبويب Actions
 
 jobs:
   scrape:
