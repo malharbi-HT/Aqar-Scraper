@@ -31,4 +31,8 @@ jobs:
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add data/
           git commit -m "Daily data update $(date +'%Y-%m-%d')" || echo "No changes to commit"
-          git push
+          for i in 1 2 3 4 5; do
+            git pull --rebase origin main && git push && break
+            echo "محاولة $i فشلت، إعادة محاولة بعد ثوانٍ..."
+            sleep 5
+          done
