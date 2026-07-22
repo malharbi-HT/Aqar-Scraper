@@ -22,8 +22,10 @@ jobs:
 
       - name: Run rent scraper
         run: python scraper_rent.py
+        continue-on-error: true
 
       - name: Commit and push new data
+        if: always()
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
