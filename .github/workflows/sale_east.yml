@@ -1,0 +1,36 @@
+name: Sale - شرق الرياض
+
+on:
+  workflow_dispatch:   # تشغيل يدوي فقط -- للسحب الأولي الكامل
+
+jobs:
+  scrape:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run scraper
+        run: python scraper_sale_east.py
+        continue-on-error: true
+
+      - name: Commit and push new data
+        if: always()
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add data/
+          git commit -m "Sale data update - شرق الرياض - $(date +'%Y-%m-%d %H:%M')" || echo "No changes to commit"
+          for i in 1 2 3 4 5; do
+            git pull --rebase origin main && git push && break
+            echo "محاولة $i فشلت، إعادة محاولة بعد ثوانٍ..."
+            sleep 5
+          done
