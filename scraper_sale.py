@@ -364,8 +364,10 @@ def main():
     print(f"عدد الإعلانات المحفوظة مسبقًا: {len(existing_ids)}")
 
     all_links = set()
+    STOP_AFTER_CONSECUTIVE_DUPLICATE_PAGES = 3  # توقف مبكر لو 3 صفحات متتالية كلها معروفة
     for base in LIST_PAGES:
         print(f"=== تصنيف: {base} ===")
+        consecutive_all_known = 0
         for page_num in range(1, MAX_PAGES_PER_CATEGORY + 1):
             page_url = base if page_num == 1 else f"{base}/{page_num}"
             try:
@@ -376,8 +378,19 @@ def main():
             if not links:
                 print(f"وصلنا آخر صفحة عند صفحة {page_num - 1}، ننتقل للتصنيف التالي")
                 break  # وصلنا آخر صفحة متاحة لهذا التصنيف
-            print(f"صفحة {page_num}: لقيت {len(links)} رابط (إجمالي حتى الآن: {len(all_links) + len(links)})")
+
+            new_on_page = [l for l in links if extract_listing_id(l) not in existing_ids]
+            print(f"صفحة {page_num}: لقيت {len(links)} رابط ({len(new_on_page)} جديد، إجمالي حتى الآن: {len(all_links) + len(links)})")
             all_links.update(links)
+
+            if not new_on_page:
+                consecutive_all_known += 1
+                if consecutive_all_known >= STOP_AFTER_CONSECUTIVE_DUPLICATE_PAGES:
+                    print(f"  {STOP_AFTER_CONSECUTIVE_DUPLICATE_PAGES} صفحات متتالية بدون أي إعلان جديد -- نتوقف مبكرًا عن هذا التصنيف ونوفر وقت")
+                    break
+            else:
+                consecutive_all_known = 0  # صفحة فيها جديد ترجّع العداد صفر
+
             time.sleep(2)  # احترام السيرفر
 
     new_links = [l for l in all_links if extract_listing_id(l) not in existing_ids]
