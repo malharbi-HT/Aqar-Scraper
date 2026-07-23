@@ -22,12 +22,8 @@ BASE_URL = "https://sa.aqar.fm"
 # بعد ما تخلص شمال الرياض، غيّر الرابط التالي لمنطقة ثانية (شرق-الرياض، غرب-الرياض...)
 LIST_PAGES = [
     "https://sa.aqar.fm/شقق-للإيجار/الرياض/شمال-الرياض",
-    "https://sa.aqar.fm/شقق-للإيجار/الرياض/شرق-الرياض",
-    "https://sa.aqar.fm/شقق-للإيجار/الرياض/غرب-الرياض",
-    "https://sa.aqar.fm/شقق-للإيجار/الرياض/جنوب-الرياض",
-    "https://sa.aqar.fm/شقق-للإيجار/الرياض/وسط-الرياض",
 ]
-MAX_PAGES_PER_CATEGORY = 200   # سقف أعلى من الحاجة الفعلية؛ السكربت يتوقف تلقائيًا عند آخر صفحة فعلية
+MAX_PAGES_PER_CATEGORY = 500   # رفعناها عشان شمال الرياض فيها ~10,534 إعلان (يحتاج ~420 صفحة)   # سقف أعلى من الحاجة الفعلية؛ السكربت يتوقف تلقائيًا عند آخر صفحة فعلية
 
 # مسارات محظورة صراحة بـ robots.txt -- لازم نتجنبها دائمًا
 FORBIDDEN_PATH_PREFIXES = [
@@ -47,7 +43,7 @@ HEADERS = {
 }
 
 DATA_DIR = os.path.join(os.path.dirname(__file__), "data")
-OUTPUT_CSV = os.path.join(DATA_DIR, "listings_rent.csv")
+OUTPUT_CSV = os.path.join(DATA_DIR, "listings_rent_north.csv")
 
 CSV_FIELDS = [
     "listing_id", "url", "title", "price", "rent_period", "area_sqm",
