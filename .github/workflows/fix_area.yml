@@ -1,0 +1,34 @@
+name: Fix Area (NLP)
+
+on:
+  workflow_dispatch:   # تشغيل يدوي فقط -- تصحيح المساحات الخاطئة من نص الوصف
+
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install pandas
+        run: pip install pandas
+
+      - name: Fix area from description (NLP)
+        run: python fix_area_nlp.py
+
+      - name: Commit and push corrected file
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add data/listings_sale_area_fixed.csv
+          git commit -m "Fix area_sqm using description NLP extraction" || echo "No changes to commit"
+          for i in 1 2 3 4 5; do
+            git pull --rebase origin main && git push && break
+            echo "محاولة $i فشلت، إعادة محاولة بعد ثوانٍ..."
+            sleep 5
+          done
