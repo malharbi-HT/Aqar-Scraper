@@ -1,0 +1,34 @@
+name: Finalize Area
+
+on:
+  workflow_dispatch:   # تشغيل يدوي فقط -- دمج المساحة المصححة بملف نهائي نظيف
+
+jobs:
+  finalize:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install pandas
+        run: pip install pandas
+
+      - name: Finalize area column
+        run: python finalize_area.py
+
+      - name: Commit and push final file
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add data/listings_sale_final.csv
+          git commit -m "Finalize sale listings with corrected area" || echo "No changes to commit"
+          for i in 1 2 3 4 5; do
+            git pull --rebase origin main && git push && break
+            echo "محاولة $i فشلت، إعادة محاولة بعد ثوانٍ..."
+            sleep 5
+          done
