@@ -11,6 +11,8 @@ import os
 DATA_DIR = os.path.join(os.path.dirname(__file__), "data")
 
 # نستخدم النسخة النظيفة لو موجودة (بعد الحدود اليدوية)، وإلا الخام
+PRICE_FIXED_PATH = os.path.join(DATA_DIR, "listings_sale_price_fixed.csv")
+FINAL_PATH = os.path.join(DATA_DIR, "listings_sale_final.csv")
 CLEAN_PATH = os.path.join(DATA_DIR, "listings_sale_clean.csv")
 RAW_PATH = os.path.join(DATA_DIR, "listings_sale.csv")
 
@@ -18,11 +20,26 @@ CONTAMINATION = 0.03  # النسبة المتوقعة من البيانات ال
 
 
 def main():
-    input_path = CLEAN_PATH if os.path.exists(CLEAN_PATH) else RAW_PATH
+    if os.path.exists(PRICE_FIXED_PATH):
+        input_path = PRICE_FIXED_PATH
+    elif os.path.exists(FINAL_PATH):
+        input_path = FINAL_PATH
+    elif os.path.exists(CLEAN_PATH):
+        input_path = CLEAN_PATH
+    else:
+        input_path = RAW_PATH
     print(f"نقرأ من: {input_path}")
 
     df = pd.read_csv(input_path, encoding="utf-8-sig")
     print(f"عدد الصفوف: {len(df)}")
+
+    # لو الملف فيه عمود السعر المصحح، ندمجه ونحذف الصفوف اللي فشل تصحيحها
+    if "price_corrected" in df.columns:
+        still_wrong = df["is_price_error"] & df["price_corrected"].isna()
+        df = df[~still_wrong].copy()
+        df["price"] = df["price_corrected"].fillna(df["price"])
+        df = df.drop(columns=["price_corrected", "is_price_error"], errors="ignore")
+        print(f"بعد دمج السعر المصحح: {len(df)} صف")
 
     # نحسب سعر المتر كميزة إضافية تساعد بكشف الشذوذ المركّب
     df["price_per_sqm"] = df["price"] / df["area_sqm"]
