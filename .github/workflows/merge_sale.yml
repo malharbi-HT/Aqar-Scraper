@@ -1,0 +1,34 @@
+name: Merge Sale Regions
+
+on:
+  workflow_dispatch:   # تشغيل يدوي فقط -- لدمج ملفات المناطق الخمسة بملف واحد
+
+jobs:
+  merge:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install pandas
+        run: pip install pandas
+
+      - name: Merge sale regions
+        run: python merge_sale_regions.py
+
+      - name: Commit and push merged file
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add data/listings_sale.csv
+          git commit -m "Merge sale regions into listings_sale.csv" || echo "No changes to commit"
+          for i in 1 2 3 4 5; do
+            git pull --rebase origin main && git push && break
+            echo "محاولة $i فشلت، إعادة محاولة بعد ثوانٍ..."
+            sleep 5
+          done
