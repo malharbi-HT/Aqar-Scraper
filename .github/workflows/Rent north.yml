@@ -1,9 +1,7 @@
-name: Rent Scrape
+name: Rent - شمال الرياض
 
 on:
-  schedule:
-    - cron: '0 2 * * *'   # يوميًا 2 صباحًا UTC = 5 الفجر بتوقيت السعودية
-  workflow_dispatch:        # تشغيل يدوي من تبويب Actions
+  workflow_dispatch:   # تشغيل يدوي فقط -- للسحب الأولي الكامل
 
 jobs:
   scrape:
@@ -20,8 +18,8 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
-      - name: Run rent scraper
-        run: python scraper_rent.py
+      - name: Run scraper
+        run: python scraper_rent_north.py
         continue-on-error: true
 
       - name: Commit and push new data
@@ -30,7 +28,7 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add data/
-          git commit -m "Rent data update $(date +'%Y-%m-%d')" || echo "No changes to commit"
+          git commit -m "Rent data update - شمال الرياض - $(date +'%Y-%m-%d %H:%M')" || echo "No changes to commit"
           for i in 1 2 3 4 5; do
             git pull --rebase origin main && git push && break
             echo "محاولة $i فشلت، إعادة محاولة بعد ثوانٍ..."
