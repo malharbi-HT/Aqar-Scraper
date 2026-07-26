@@ -54,15 +54,16 @@ def extract_listing_id(url):
 
 def collect_listing_links_from_list_page(url):
     last_error = None
-    for attempt in range(1, 4):
+    for attempt in range(1, 6):  # رفعناها لـ5 محاولات (كانت 3)
         try:
-            resp = requests.get(url, headers=HEADERS, timeout=20)
+            resp = requests.get(url, headers=HEADERS, timeout=25)
             resp.raise_for_status()
             break
         except requests.RequestException as e:
             last_error = e
-            if attempt < 3:
-                time.sleep(3 * attempt)
+            print(f"    محاولة {attempt} فشلت لـ {url}: {e}")
+            if attempt < 5:
+                time.sleep(5 * attempt)  # تأخير أطول (5، 10، 15، 20 ثانية)
     else:
         raise last_error
     soup = BeautifulSoup(resp.text, "html.parser")
@@ -80,23 +81,44 @@ def collect_listing_links_from_list_page(url):
 
 def main():
     all_records = {}  # listing_id -> url
+    failed_pages_total = 0
 
     for base in LIST_PAGES:
         print(f"=== تصنيف: {base} ===")
+        failed_pages_this_direction = 0
+        consecutive_empty = 0
         for page_num in range(1, MAX_PAGES_PER_CATEGORY + 1):
             page_url = base if page_num == 1 else f"{base}/{page_num}"
             try:
                 links = collect_listing_links_from_list_page(page_url)
             except requests.RequestException as e:
-                print(f"تخطي {page_url}: {e}")
+                print(f"⚠️  فشلت الصفحة نهائيًا بعد كل المحاولات: {page_url}: {e}")
+                failed_pages_this_direction += 1
+                failed_pages_total += 1
+                time.sleep(10)  # نعطي راحة إضافية للسيرفر بعد فشل متكرر
                 continue
             if not links:
-                print(f"وصلنا آخر صفحة عند صفحة {page_num - 1}")
-                break
+                consecutive_empty += 1
+                print(f"صفحة {page_num}: فاضية (متتالية: {consecutive_empty})")
+                if consecutive_empty >= 2:
+                    print(f"وصلنا آخر صفحة عند صفحة {page_num - consecutive_empty}")
+                    break
+                time.sleep(2)
+                continue
+            consecutive_empty = 0
             for link in links:
                 all_records[extract_listing_id(link)] = link
             print(f"صفحة {page_num}: إجمالي حتى الآن {len(all_records)}")
             time.sleep(2)
+
+        if failed_pages_this_direction:
+            print(f"⚠️  {base}: {failed_pages_this_direction} صفحة فشلت نهائيًا (~{failed_pages_this_direction * 25} إعلان محتمل مفقود)")
+
+    if failed_pages_total:
+        print(f"\n{'='*50}")
+        print(f"⚠️  تحذير: {failed_pages_total} صفحة فشلت نهائيًا بكل التصنيفات")
+        print(f"⚠️  هذا يعني احتمال نقص ~{failed_pages_total * 25} إعلان بالعدد النهائي")
+        print(f"{'='*50}")
 
     os.makedirs(DATA_DIR, exist_ok=True)
     with open(OUTPUT_PATH, "w", newline="", encoding="utf-8-sig") as f:
