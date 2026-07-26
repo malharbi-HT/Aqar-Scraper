@@ -77,9 +77,17 @@ def extract_listing_id(url: str) -> str:
 
 
 def get_soup(url: str):
-    resp = requests.get(url, headers=HEADERS, timeout=15)
-    resp.raise_for_status()
-    return BeautifulSoup(resp.text, "html.parser")
+    last_error = None
+    for attempt in range(1, 4):  # 3 محاولات قبل ما نستسلم فعليًا
+        try:
+            resp = requests.get(url, headers=HEADERS, timeout=20)
+            resp.raise_for_status()
+            return BeautifulSoup(resp.text, "html.parser")
+        except requests.RequestException as e:
+            last_error = e
+            if attempt < 3:
+                time.sleep(3 * attempt)  # تأخير متصاعد بين المحاولات (3، 6 ثواني)
+    raise last_error
 
 
 NEXT_F_PATTERN = re.compile(r'self\.__next_f\.push\(\[1,"((?:[^"\\]|\\.)*)"\]\)', re.DOTALL)
