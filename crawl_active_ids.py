@@ -1,7 +1,11 @@
 """
 يمر على كل صفحات القوائم (بدون فتح تفاصيل كل إعلان -- سريع)
-ويحفظ قائمة كاملة بكل أرقام الإعلانات الموجودة حاليًا بالموقع لكل منطقة.
-يُستخدم كأساس لمقارنة يومية (جديد / نشط / محتمل محذوف) عبر track_status.py
+ويحفظ قائمة كاملة بكل أرقام الإعلانات الموجودة حاليًا بالموقع.
+
+مهم: الموقع يفرض حد أقصى على عمق الترقيم (Pagination Depth) لكل تصنيف --
+لو طلبنا "كل شمال الرياض" دفعة وحدة، يتوقف الموقع عن إرجاع نتائج بعد حوالي
+120-190 صفحة حتى لو فيه أكثر فعليًا. الحل: نمسح كل حي لحاله (أصغر بكثير،
+يبقى تحت حد العمق)، بدل ما نطلب المنطقة كاملة دفعة وحدة.
 """
 
 import requests
@@ -14,14 +18,14 @@ from urllib.parse import urljoin
 
 BASE_URL = "https://sa.aqar.fm"
 
-LIST_PAGES = [
-    "https://sa.aqar.fm/شقق-للبيع/الرياض/شمال-الرياض",
-    "https://sa.aqar.fm/شقق-للبيع/الرياض/شرق-الرياض",
-    "https://sa.aqar.fm/شقق-للبيع/الرياض/غرب-الرياض",
-    "https://sa.aqar.fm/شقق-للبيع/الرياض/جنوب-الرياض",
-    "https://sa.aqar.fm/شقق-للبيع/الرياض/وسط-الرياض",
-]
-MAX_PAGES_PER_CATEGORY = 500  # بدون توقف مبكر -- نبي مسح كامل لكل الموجود حاليًا
+DIRECTIONS = {
+    "شمال الرياض": "https://sa.aqar.fm/شقق-للبيع/الرياض/شمال-الرياض",
+    "شرق الرياض": "https://sa.aqar.fm/شقق-للبيع/الرياض/شرق-الرياض",
+    "غرب الرياض": "https://sa.aqar.fm/شقق-للبيع/الرياض/غرب-الرياض",
+    "جنوب الرياض": "https://sa.aqar.fm/شقق-للبيع/الرياض/جنوب-الرياض",
+    "وسط الرياض": "https://sa.aqar.fm/شقق-للبيع/الرياض/وسط-الرياض",
+}
+MAX_PAGES_PER_DISTRICT = 200  # سقف آمن لكل حي لحاله (أحياء كبيرة جدًا نادرة تتجاوزه)
 
 FORBIDDEN_PATH_PREFIXES = [
     "/contact-us", "/اتصل-بنا", "/معلومات-المعلن", "/contact_user",
@@ -52,21 +56,47 @@ def extract_listing_id(url):
     return match.group(1) if match else url
 
 
-def collect_listing_links_from_list_page(url):
+def fetch_html(url):
     last_error = None
-    for attempt in range(1, 6):  # رفعناها لـ5 محاولات (كانت 3)
+    for attempt in range(1, 6):
         try:
             resp = requests.get(url, headers=HEADERS, timeout=25)
             resp.raise_for_status()
-            break
+            return resp.text
         except requests.RequestException as e:
             last_error = e
             print(f"    محاولة {attempt} فشلت لـ {url}: {e}")
             if attempt < 5:
-                time.sleep(5 * attempt)  # تأخير أطول (5، 10، 15، 20 ثانية)
-    else:
-        raise last_error
-    soup = BeautifulSoup(resp.text, "html.parser")
+                time.sleep(5 * attempt)
+    raise last_error
+
+
+def discover_districts(direction_url):
+    """يجيب كل روابط الأحياء المذكورة بصفحة المنطقة (تظهر مرتين أحيانًا، ندمجهم)"""
+    html = fetch_html(direction_url)
+    soup = BeautifulSoup(html, "html.parser")
+
+    districts = {}  # district_url -> name
+    for a in soup.select("a[href]"):
+        href = a["href"]
+        full = urljoin(BASE_URL, href)
+        if "/حي-" not in full and "حي" not in full:
+            continue
+        # لازم يكون امتداد مباشر لرابط المنطقة نفسها (حي تابع لها)
+        if not full.startswith(direction_url + "/"):
+            continue
+        # نتأكد ما فيه أرقام إعلان أو صفحات بنهاية الرابط (يعني رابط حي نظيف)
+        tail = full[len(direction_url) + 1:]
+        if "/" in tail or re.search(r"-\d{4,}$", tail):
+            continue
+        districts[full] = a.get_text(strip=True)
+
+    return districts
+
+
+def collect_listing_links_from_list_page(url):
+    html = fetch_html(url)
+    soup = BeautifulSoup(html, "html.parser")
     links = set()
     for a in soup.select("a[href]"):
         href = a["href"]
@@ -79,46 +109,58 @@ def collect_listing_links_from_list_page(url):
     return links
 
 
-def main():
-    all_records = {}  # listing_id -> url
-    failed_pages_total = 0
-
-    for base in LIST_PAGES:
-        print(f"=== تصنيف: {base} ===")
-        failed_pages_this_direction = 0
-        consecutive_empty = 0
-        for page_num in range(1, MAX_PAGES_PER_CATEGORY + 1):
-            page_url = base if page_num == 1 else f"{base}/{page_num}"
-            try:
-                links = collect_listing_links_from_list_page(page_url)
-            except requests.RequestException as e:
-                print(f"⚠️  فشلت الصفحة نهائيًا بعد كل المحاولات: {page_url}: {e}")
-                failed_pages_this_direction += 1
-                failed_pages_total += 1
-                time.sleep(10)  # نعطي راحة إضافية للسيرفر بعد فشل متكرر
-                continue
-            if not links:
-                consecutive_empty += 1
-                print(f"صفحة {page_num}: فاضية (متتالية: {consecutive_empty})")
-                if consecutive_empty >= 2:
-                    print(f"وصلنا آخر صفحة عند صفحة {page_num - consecutive_empty}")
-                    break
-                time.sleep(2)
-                continue
-            consecutive_empty = 0
-            for link in links:
-                all_records[extract_listing_id(link)] = link
-            print(f"صفحة {page_num}: إجمالي حتى الآن {len(all_records)}")
+def crawl_one_url(base_url, all_records, failed_counter):
+    """يمسح كل صفحات رابط وحد (حي أو منطقة صغيرة) حتى صفحتين فاضيتين متتاليتين"""
+    consecutive_empty = 0
+    for page_num in range(1, MAX_PAGES_PER_DISTRICT + 1):
+        page_url = base_url if page_num == 1 else f"{base_url}/{page_num}"
+        try:
+            links = collect_listing_links_from_list_page(page_url)
+        except requests.RequestException as e:
+            print(f"  ⚠️  فشلت الصفحة نهائيًا: {page_url}: {e}")
+            failed_counter[0] += 1
+            time.sleep(10)
+            continue
+        if not links:
+            consecutive_empty += 1
+            if consecutive_empty >= 2:
+                break
             time.sleep(2)
+            continue
+        consecutive_empty = 0
+        for link in links:
+            all_records[extract_listing_id(link)] = link
+        time.sleep(1.5)
+    return page_num - consecutive_empty
 
-        if failed_pages_this_direction:
-            print(f"⚠️  {base}: {failed_pages_this_direction} صفحة فشلت نهائيًا (~{failed_pages_this_direction * 25} إعلان محتمل مفقود)")
 
-    if failed_pages_total:
-        print(f"\n{'='*50}")
-        print(f"⚠️  تحذير: {failed_pages_total} صفحة فشلت نهائيًا بكل التصنيفات")
-        print(f"⚠️  هذا يعني احتمال نقص ~{failed_pages_total * 25} إعلان بالعدد النهائي")
-        print(f"{'='*50}")
+def main():
+    all_records = {}
+    failed_counter = [0]
+
+    for direction_name, direction_url in DIRECTIONS.items():
+        print(f"\n=== المنطقة: {direction_name} ===")
+        districts = discover_districts(direction_url)
+        print(f"لقينا {len(districts)} حي بهذي المنطقة")
+
+        before_direction = len(all_records)
+
+        # 1) نمسح كل حي لحاله (تحت حد العمق دائمًا لأنها أصغر)
+        for district_url, district_name in districts.items():
+            last_page = crawl_one_url(district_url, all_records, failed_counter)
+            print(f"  {district_name}: توقفنا صفحة {last_page} -- إجمالي تراكمي {len(all_records)}")
+            time.sleep(1)
+
+        # 2) نمسح كمان صفحات المنطقة نفسها (بدون فلتر حي) لأول عدد صفحات آمن،
+        #    عشان نلقط أي إعلان "بدون حي محدد" ما ظهر بقائمة الأحياء أعلاه
+        last_page = crawl_one_url(direction_url, all_records, failed_counter)
+        print(f"  (فحص عام للمنطقة كاملة): توقفنا صفحة {last_page}")
+
+        added = len(all_records) - before_direction
+        print(f"✅ {direction_name}: أضفنا {added} إعلان جديد (إجمالي تراكمي: {len(all_records)})")
+
+    if failed_counter[0]:
+        print(f"\n⚠️  تحذير: {failed_counter[0]} صفحة فشلت نهائيًا بكل التشغيلة")
 
     os.makedirs(DATA_DIR, exist_ok=True)
     with open(OUTPUT_PATH, "w", newline="", encoding="utf-8-sig") as f:
