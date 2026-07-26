@@ -24,8 +24,12 @@ HEADERS = {
 
 DIRECTIONS = ["شمال الرياض", "شرق الرياض", "غرب الرياض", "جنوب الرياض", "وسط الرياض"]
 
-# نمط "اسم المنطقة (الرقم)" زي ما يظهر بصفحة الموقع الرئيسية للتصنيف
-COUNT_PATTERN = re.compile(r"({})\s*\((\d[\d,]*)\)".format("|".join(DIRECTIONS)))
+ARABIC_DIGITS = str.maketrans("٠١٢٣٤٥٦٧٨٩", "0123456789")
+
+# نمط مرن: يدعم مسافات غير قياسية (nbsp) وفواصل عربية/إنجليزية
+COUNT_PATTERN = re.compile(
+    r"({})[\s\u00a0]*\(([\d\u0660-\u0669,\u066c]+)\)".format("|".join(DIRECTIONS))
+)
 
 
 def fetch_site_counts():
@@ -44,12 +48,20 @@ def fetch_site_counts():
         raise last_error
 
     counts = {}
-    for match in COUNT_PATTERN.finditer(resp.text):
+    normalized_text = resp.text.translate(ARABIC_DIGITS).replace(",", "").replace("\u066c", "")
+    # نطبّق النمط على النص الأصلي (للأسماء) لكن نستخرج الرقم من نفس الموضع بالنص المطبّع
+    for match in re.finditer(
+        r"({})[\s\u00a0]*\(([\d,]+)\)".format("|".join(DIRECTIONS)), normalized_text
+    ):
         direction = match.group(1)
-        count = int(match.group(2).replace(",", ""))
-        # أول مطابقة لكل منطقة تكفي (الرقم يتكرر أحيانًا بمكان ثاني بالصفحة)
+        count = int(match.group(2))
         if direction not in counts:
             counts[direction] = count
+
+    if not counts:
+        print("تحذير: ما لقينا أي عدد. عينة من أول 500 حرف بالصفحة للتشخيص:")
+        print(resp.text[:500])
+
     return counts
 
 
