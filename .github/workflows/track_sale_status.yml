@@ -1,0 +1,36 @@
+name: Track Sale Status
+
+on:
+  schedule:
+    - cron: '0 1 * * *'   # يوميًا 1 صباحًا UTC = 4 الفجر بتوقيت السعودية (بعد سحب البيع بساعة)
+  workflow_dispatch:        # تشغيل يدوي من Actions
+
+jobs:
+  track:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: pip install requests beautifulsoup4 lxml pandas
+
+      - name: Crawl active IDs
+        run: python crawl_active_ids.py
+        continue-on-error: true
+
+      - name: Track status changes
+        if: always()
+        run: python track_status.py
+
+      - name: Commit and push
+        if: always()
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add data/active_ids_today.csv data/listings_sale_status.csv
+          git commit -m "Track sale status $(date +'%Y-%m-%d')" || echo "No changes"
+          for i in 1 2 3 4 5; do
+            git pull --rebase origin main && git push && break
+            sleep 5
+          done
