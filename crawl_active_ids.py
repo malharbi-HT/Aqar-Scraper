@@ -53,8 +53,18 @@ def extract_listing_id(url):
 
 
 def collect_listing_links_from_list_page(url):
-    resp = requests.get(url, headers=HEADERS, timeout=15)
-    resp.raise_for_status()
+    last_error = None
+    for attempt in range(1, 4):
+        try:
+            resp = requests.get(url, headers=HEADERS, timeout=20)
+            resp.raise_for_status()
+            break
+        except requests.RequestException as e:
+            last_error = e
+            if attempt < 3:
+                time.sleep(3 * attempt)
+    else:
+        raise last_error
     soup = BeautifulSoup(resp.text, "html.parser")
     links = set()
     for a in soup.select("a[href]"):
