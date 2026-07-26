@@ -11,6 +11,7 @@ import os
 DATA_DIR = os.path.join(os.path.dirname(__file__), "data")
 
 # نستخدم النسخة النظيفة لو موجودة (بعد الحدود اليدوية)، وإلا الخام
+CROSSCHECKED_PATH = os.path.join(DATA_DIR, "listings_sale_area_crosschecked.csv")
 PRICE_FIXED_PATH = os.path.join(DATA_DIR, "listings_sale_price_fixed.csv")
 FINAL_PATH = os.path.join(DATA_DIR, "listings_sale_final.csv")
 CLEAN_PATH = os.path.join(DATA_DIR, "listings_sale_clean.csv")
@@ -20,7 +21,9 @@ CONTAMINATION = 0.03  # النسبة المتوقعة من البيانات ال
 
 
 def main():
-    if os.path.exists(PRICE_FIXED_PATH):
+    if os.path.exists(CROSSCHECKED_PATH):
+        input_path = CROSSCHECKED_PATH
+    elif os.path.exists(PRICE_FIXED_PATH):
         input_path = PRICE_FIXED_PATH
     elif os.path.exists(FINAL_PATH):
         input_path = FINAL_PATH
@@ -40,6 +43,11 @@ def main():
         df["price"] = df["price_corrected"].fillna(df["price"])
         df = df.drop(columns=["price_corrected", "is_price_error"], errors="ignore")
         print(f"بعد دمج السعر المصحح: {len(df)} صف")
+
+    if "area_sqm_final" in df.columns:
+        df["area_sqm"] = df["area_sqm_final"].fillna(df["area_sqm"])
+        df = df.drop(columns=["area_sqm_final", "is_area_mismatch"], errors="ignore")
+        print(f"بعد دمج المساحة المصححة: {len(df)} صف")
 
     # نحسب سعر المتر كميزة إضافية تساعد بكشف الشذوذ المركّب
     df["price_per_sqm"] = df["price"] / df["area_sqm"]
