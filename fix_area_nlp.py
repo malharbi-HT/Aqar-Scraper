@@ -45,7 +45,7 @@ COMMA_LIST_PATTERN = re.compile(
 # نمط احتياطي: مساحة مفردة مباشرة بصيغ متعددة
 # يستثني صراحة "مساحة الأرض/المشروع" لأنها مو مساحة الوحدة الفعلية
 SINGLE_AREA_PATTERN = re.compile(
-    r"(?:المساحة\s*الإجمالية|إجمالي\s*(?:المساحة|للمساحة)|مساحة\s*الشقة|المساحة)"
+    r"(?:المساحة\s*الإجمالية|إجمالي\s*(?:المساحة|للمساحة)|مساحة\s*الشقة|المساحة|بمساحة)"
     r"(?!\s*(?:الأرض|الارض|المشروع))"
     r"\s*[:\s]*(?:تبلغ\s*)?(?:حوالي\s*)?"
     r"(\d{2,4}(?:[.,]\d+)?)\s*(?:متر\s*مربع|م[²2]?|متر)\b"
@@ -105,21 +105,21 @@ def extract_unit_ranges(description):
     desc = normalize_digits(description)
     ranges = []
     for m in RANGE_PATTERN.finditer(desc):
-        low, high = float(m.group(1)), float(m.group(2))
+        low, high = float(m.group(1).replace(",", ".")), float(m.group(2).replace(",", "."))
         if low < high and high < 1000:  # نطاق منطقي لشقة
             ranges.append((low, high))
 
     # نجرب نمط "تبدأ من X ... تصل إلى Y" لو ما لقينا شي بالنمط الأساسي
     if not ranges:
         for m in START_END_PATTERN.finditer(desc):
-            low, high = float(m.group(1)), float(m.group(2))
+            low, high = float(m.group(1).replace(",", ".")), float(m.group(2).replace(",", "."))
             if low < high and high < 1000:
                 ranges.append((low, high))
 
     # نجرب نمط "مساحات تبدأ من X الى Y" بدون وحدة قياس مذكورة
     if not ranges:
         for m in AREAS_NO_UNIT_PATTERN.finditer(desc):
-            low, high = float(m.group(1)), float(m.group(2))
+            low, high = float(m.group(1).replace(",", ".")), float(m.group(2).replace(",", "."))
             if low < high and high < 1000:
                 ranges.append((low, high))
 
