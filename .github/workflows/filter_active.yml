@@ -1,0 +1,25 @@
+name: Filter Active Only
+
+on:
+  workflow_dispatch:   # تشغيل يدوي فقط -- يفلتر النشط بس (يعتمد على تتبع الحالة أولاً)
+
+jobs:
+  filter:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: pip install pandas
+      - run: python filter_active_only.py
+      - name: Commit and push
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add data/listings_sale_active_only.csv
+          git commit -m "Filter active-only listings" || echo "No changes"
+          for i in 1 2 3 4 5; do
+            git pull --rebase origin main && git push && break
+            sleep 5
+          done
