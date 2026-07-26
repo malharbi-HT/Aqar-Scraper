@@ -21,9 +21,9 @@ BASE_URL = "https://sa.aqar.fm"
 # نسحب منطقة وحدة كاملة بكل مرة عشان نتحكم بالوقت والموارد.
 # بعد ما تخلص شمال الرياض، غيّر الرابط التالي لمنطقة ثانية (شرق-الرياض، غرب-الرياض...)
 LIST_PAGES = [
-    "https://sa.aqar.fm/شقق-للإيجار/الرياض/غرب-الرياض",
+    "https://sa.aqar.fm/شقق-للبيع/الرياض/غرب-الرياض",
 ]
-MAX_PAGES_PER_CATEGORY = 500   # رفعناها احتياطًا، بعض المناطق فيها آلاف الإعلانات الإيجارية   # سقف أعلى من الحاجة الفعلية؛ السكربت يتوقف تلقائيًا عند آخر صفحة فعلية
+MAX_PAGES_PER_CATEGORY = 200   # سقف أعلى من الحاجة الفعلية؛ السكربت يتوقف تلقائيًا عند آخر صفحة فعلية
 
 # مسارات محظورة صراحة بـ robots.txt -- لازم نتجنبها دائمًا
 FORBIDDEN_PATH_PREFIXES = [
@@ -43,10 +43,10 @@ HEADERS = {
 }
 
 DATA_DIR = os.path.join(os.path.dirname(__file__), "data")
-OUTPUT_CSV = os.path.join(DATA_DIR, "listings_rent_west.csv")
+OUTPUT_CSV = os.path.join(DATA_DIR, "listings_sale_west.csv")
 
 CSV_FIELDS = [
-    "listing_id", "url", "title", "price", "rent_period", "area_sqm",
+    "listing_id", "url", "title", "price", "area_sqm",
     "rooms", "bathrooms", "livings", "age_years", "district", "city", "direction",
     "description", "latitude", "longitude", "images", "images_count",
     "advertiser_name", "advertiser_company", "advertiser_type",
@@ -254,7 +254,7 @@ def scrape_listing_detail(url):
     data = {
         "listing_id": extract_listing_id(url),
         "url": url,
-        "title": None, "price": None, "rent_period": None, "area_sqm": None,
+        "title": None, "price": None, "area_sqm": None,
         "rooms": None, "bathrooms": None, "livings": None, "age_years": None,
         "district": None, "city": None, "direction": None,
         "description": None, "latitude": None, "longitude": None,
@@ -269,7 +269,6 @@ def scrape_listing_detail(url):
     if listing:
         data["title"] = listing.get("title")
         data["price"] = listing.get("price") or listing.get("rega_total_price")
-        data["rent_period"] = listing.get("rent_period")
         data["area_sqm"] = listing.get("area")
         data["rooms"] = listing.get("beds")
         data["bathrooms"] = listing.get("wc")
@@ -361,10 +360,8 @@ def main():
     print(f"عدد الإعلانات المحفوظة مسبقًا: {len(existing_ids)}")
 
     all_links = set()
-    STOP_AFTER_CONSECUTIVE_DUPLICATE_PAGES = 3  # توقف مبكر لو 3 صفحات متتالية كلها معروفة
     for base in LIST_PAGES:
         print(f"=== تصنيف: {base} ===")
-        consecutive_all_known = 0
         for page_num in range(1, MAX_PAGES_PER_CATEGORY + 1):
             page_url = base if page_num == 1 else f"{base}/{page_num}"
             try:
@@ -379,14 +376,6 @@ def main():
             new_on_page = [l for l in links if extract_listing_id(l) not in existing_ids]
             print(f"صفحة {page_num}: لقيت {len(links)} رابط ({len(new_on_page)} جديد، إجمالي حتى الآن: {len(all_links) + len(links)})")
             all_links.update(links)
-
-            if not new_on_page:
-                consecutive_all_known += 1
-                if consecutive_all_known >= STOP_AFTER_CONSECUTIVE_DUPLICATE_PAGES:
-                    print(f"  {STOP_AFTER_CONSECUTIVE_DUPLICATE_PAGES} صفحات متتالية بدون أي إعلان جديد -- نتوقف مبكرًا عن هذا التصنيف ونوفر وقت")
-                    break
-            else:
-                consecutive_all_known = 0  # صفحة فيها جديد ترجّع العداد صفر
 
             time.sleep(2)  # احترام السيرفر
 
