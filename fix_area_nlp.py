@@ -14,7 +14,9 @@ import re
 import os
 
 DATA_DIR = os.path.join(os.path.dirname(__file__), "data")
-INPUT_PATH = os.path.join(DATA_DIR, "listings_sale.csv")
+ACTIVE_ONLY_PATH = os.path.join(DATA_DIR, "listings_sale_active_only.csv")
+RAW_PATH = os.path.join(DATA_DIR, "listings_sale.csv")
+INPUT_PATH = ACTIVE_ONLY_PATH if os.path.exists(ACTIVE_ONLY_PATH) else RAW_PATH
 OUTPUT_PATH = os.path.join(DATA_DIR, "listings_sale_area_fixed.csv")
 
 # نمط "مساحة المشروع" أو "مساحة الأرض" -- يدل إن area_sqm الحالي قد يكون خاطئ
