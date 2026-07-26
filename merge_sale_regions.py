@@ -19,14 +19,19 @@ REGION_FILES = [
 
 def main():
     dfs = []
+    merged_regions = []
+    missing_regions = []
+
     for filename in REGION_FILES:
         path = os.path.join(DATA_DIR, filename)
         if not os.path.exists(path):
             print(f"تحذير: ما لقيت {filename}، نتخطاه")
+            missing_regions.append(filename)
             continue
         df = pd.read_csv(path, encoding="utf-8-sig")
         print(f"{filename}: {len(df)} صف")
         dfs.append(df)
+        merged_regions.append(filename)
 
     if not dfs:
         print("ما فيه أي ملف متاح للدمج!")
@@ -42,7 +47,20 @@ def main():
 
     out_path = os.path.join(DATA_DIR, "listings_sale.csv")
     merged.to_csv(out_path, index=False, encoding="utf-8-sig")
-    print(f"\nتم الدمج: {len(merged)} صف إجمالي -> {out_path}")
+
+    print(f"\n{'='*50}")
+    print("ملخص الدمج")
+    print(f"{'='*50}")
+    print(f"✅ اندمجت بنجاح ({len(merged_regions)}):")
+    for r in merged_regions:
+        print(f"   - {r}")
+    if missing_regions:
+        print(f"\n❌ ما اندمجت (الملف مو موجود) ({len(missing_regions)}):")
+        for r in missing_regions:
+            print(f"   - {r}")
+    else:
+        print("\n❌ ما اندمجت: لا شي -- كل المناطق موجودة ✓")
+    print(f"\nالإجمالي النهائي: {len(merged)} صف -> {out_path}")
 
 
 if __name__ == "__main__":
