@@ -1,0 +1,115 @@
+district_id,name,name_en,count
+588,حي المهدية,Al Mahdiyah,1889
+446,حي الرمال,Ar Rimal,688
+600,حي النرجس,An Narjis,686
+634,حي اليرموك,Al Yarmouk,468
+494,حي العارض,Al Arid,464
+570,حي الملقا,Al Malqa,452
+688,حي ظهرة لبن,Dhahrat Laban,450
+682,حي طويق,Tuwaiq,449
+590,حي المونسية,Al Munsiyah,437
+410,حي الجنادرية,Al Janadriyah,389
+648,حي بدر,Badr,377
+414,حي الحزم,Al Hazm,255
+476,حي الشرق,Ash Sharq,237
+706,حي قرطبة,Qurtubah,228
+632,حي الياسمين,Al Yasmin,219
+390,حي اشبيلية,Ishbiliyah,198
+698,حي عكاظ,Okaz,185
+486,حي الصحافة,As Sahafah,173
+690,حي ظهرة نمار,Dhahrat Namar,141
+608,حي النظيم,An Nadhim,129
+424,حي الدار البيضاء,Ad Dar Al Baida,115
+614,حي النهضة,An Nahdah,107
+536,حي القيروان,Al Qirawan,105
+564,حي المعيزلة,Al Maizilah,104
+546,حي المروة,Al Marwah,97
+668,حي ديراب,Dirab,90
+458,حي الزهرة,Az Zahrah,89
+460,حي السعادة,As Saadah,86
+664,حي حطين,Hittin,85
+530,حي القادسية,Al Qadisiyah,82
+680,حي ضاحية نمار,Dahiat Namar,73
+468,حي السليمانية,As Sulimaniyah,70
+684,حي طيبة,Taiba,68
+404,حي التعاون,At Taawon,66
+422,حي الخليج,Al Khaleej,57
+704,حي غرناطة,Ghirnatah,57
+470,حي السويدي,Sultanah,56
+504,حي العقيق,Al Aqiq,56
+526,حي الفيحاء,Al Fayha,54
+532,حي القدس,Al Quds,52
+498,حي العريجاء الغربية,Al Uraija Al Gharbiyah,48
+604,حي النسيم الشرقي,An Nasim Ash Sharqi,48
+506,حي العليا,Al Olaya,47
+598,حي الندى,An Nada,46
+556,حي المصيف,Al Masif,41
+694,حي عرقة,Irqah,41
+440,حي الربيع,Ar Rabie,40
+548,حي المروج,Al Muruj,38
+416,حي الحمراء,Al Hamra,36
+450,حي الروابي,Ar Rawabi,36
+596,حي النخيل,An Nakheel,36
+392,حي الازدهار,Al Ezdihar,35
+602,حي النزهة,An Nuzhah,35
+452,حي الروضة,Ar Rawdah,33
+686,حي ظهرة البديعة,Dhahrat Al Badi'ah,31
+578,حي الملك فيصل,King Faisal,28
+606,حي النسيم الغربي,An Nasim Al Gharbi,28
+472,حي السويدي الغربي,As Suwaidi Al Gharabi,26
+514,حي الغدير,Al Ghadir,25
+478,حي الشفا,Ash Shifa,24
+502,حي العزيزية,Al Aziziyah,23
+582,حي المنار,Al Manar,21
+396,حي الاندلس,Al Andalus,20
+442,حي الرحمانية,Ar Rahmaniyah,20
+454,حي الريان,Ar Rayan,20
+576,حي الملك فهد,King Fahd,20
+488,حي الصفا,As Safaa,17
+482,حي الشهداء,Ash Shuhada,16
+622,حي الوادي,Al Wadi,16
+610,حي النفل,An Nafal,15
+708,حي لبن,Laban,15
+566,حي المغرزات,Al Mughrizat,14
+464,حي السلام,As Salam,12
+428,حي الدريهمية,Ad Duraihimiyah,11
+400,حي البرية,Al Bariah,10
+436,حي الرائد,Ar Raid,10
+520,حي الفاروق,Al Faruq,10
+542,حي المربع,Al Murabba,10
+718,حي نمار,Namar,10
+712,حي مطار الملك خالد الدولي,King Khalid International Airport,9
+500,حي العريجاء الوسطى,Al Uraija Al Wusta,8
+538,حي المحمدية,Al Mohammadiyah,8
+620,حي الواحة,Al Wahah,8
+568,حي الملز,Al Malaz,7
+640,حي ام الحمام الغربي,Umm Al Hamam Al Gharbi,7
+646,حي أحد,Uhud,7
+674,حي شبرا,Shubra,7
+522,حي الفلاح,Al Falah,6
+438,حي الربوة,Ar Rabwah,5
+662,حي جرير,Jarir,5
+700,حي عليشة,Ulaishah,4
+420,حي الخزامى,Al Khuzamy,3
+444,حي الرفيعة,Ar Rafiah,3
+544,حي المرسلات,Al Mursalat,3
+560,حي المعذر الشمالي,Al Mathar Ash Shamali,3
+572,حي الملك عبدالعزيز,King Abdul Aziz,3
+650,حي بنبان,Banban,3
+394,حي الاسكان,Al Eskan,2
+398,حي البديعة,Al Badi'ah,2
+574,حي الملك عبدالله,King Abdullah,2
+652,حي ثليم,Thalim,2
+676,حي صلاح الدين,Salah Ad Din,2
+434,حي الديرة,Ad Deerah,1
+448,حي الرماية,Ar Rimayah,1
+492,حي الضباط,Ad Dhubbat,1
+516,حي الغنامية,Al Ghnamiah,1
+554,حي المصفاة,Al Misfat,1
+584,حي المنصورة,Al Mansourah,1
+624,حي الورود,Al Wurud,1
+626,حي الوزارات,Al Wizarat,1
+636,حي اليمامة,Al Yamamah,1
+672,حي سلطانة,Sultana,1
+696,حي عريض,Uraidh,1
+714,حي منفوحة,Manfuhah,1
