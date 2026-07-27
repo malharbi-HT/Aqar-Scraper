@@ -15,6 +15,10 @@ import os
 
 sys.path.insert(0, os.path.dirname(__file__))
 from fix_area_nlp_rent import looks_like_project_area, pick_best_area
+from fix_price_nlp_rent import (
+    is_marketing_request, is_actually_sale, looks_like_wrong_price,
+    extract_price_from_description,
+)
 
 CLEAN_EXPORT_PATH = os.path.join(DATA_DIR, "listings_rent_clean.csv")
 
@@ -95,6 +99,64 @@ def fix_area(df):
 # كل دالة جديدة نضيفها هنا، ونستدعيها بترتيبها بدالة main()
 # ============================================================
 
+def exclude_marketing_posts(df):
+    """يستبعد طلبات التسويق الوهمية (مو إعلانات عقار حقيقية)"""
+    untagged = df["exclusion_reason"].isna()
+    is_marketing = df.loc[untagged, "description"].apply(is_marketing_request)
+    mask = pd.Series(False, index=df.index)
+    mask.loc[untagged[untagged].index] = is_marketing
+    df, count = tag_exclusion(df, mask, "marketing_post")
+    print(f"[طلبات تسويق] علّمنا {count} صف")
+    return df
+
+
+def exclude_actually_sale(df):
+    """يستبعد إعلانات 'إيجار' اللي هي فعليًا بيع متصنّف غلط"""
+    untagged = df["exclusion_reason"].isna()
+    is_sale = df.loc[untagged, "description"].apply(is_actually_sale)
+    mask = pd.Series(False, index=df.index)
+    mask.loc[untagged[untagged].index] = is_sale
+    df, count = tag_exclusion(df, mask, "actually_sale")
+    print(f"[بيع متصنّف كإيجار] علّمنا {count} صف")
+    return df
+
+
+def fix_price(df):
+    """يقارن السعر بالعمود مع السعر المستخرج من الوصف، ويصحح أو يعلّم المستحيل"""
+    active_idx = df[df["exclusion_reason"].isna()].index
+    print(f"[تصحيح السعر] نستخرج السعر من {len(active_idx)} وصف (يستغرق شوي)...")
+
+    extracted = df.loc[active_idx, "description"].apply(extract_price_from_description)
+    is_wrong = df.loc[active_idx].apply(
+        lambda row: looks_like_wrong_price(row, extracted.get(row.name)), axis=1
+    )
+
+    # حد أدنى مطلق: أي إيجار سنوي تحت هذا الرقم مستحيل يكون حقيقي بالرياض
+    ABSOLUTE_MIN_RENT = 5_000
+    absurdly_low = df.loc[active_idx, "price"] < ABSOLUTE_MIN_RENT
+    is_wrong = is_wrong | absurdly_low
+
+    wrong_idx = active_idx[is_wrong]
+    print(f"[تصحيح السعر] صفوف فيها احتمال خطأ: {len(wrong_idx)}")
+
+    fixed_count = 0
+    uncorrectable_idx = []
+    for idx in wrong_idx:
+        new_price = extracted.get(idx)
+        if new_price:
+            df.at[idx, "price"] = new_price
+            fixed_count += 1
+        else:
+            uncorrectable_idx.append(idx)
+
+    print(f"[تصحيح السعر] صُحح تلقائيًا: {fixed_count}")
+    print(f"[تصحيح السعر] يستحيل تصحيحه: {len(uncorrectable_idx)}")
+
+    mask = pd.Series(False, index=df.index)
+    mask.loc[uncorrectable_idx] = True
+    df, _ = tag_exclusion(df, mask, "price_uncorrectable")
+    return df
+
 
 def main():
     df = load_master()
@@ -102,8 +164,9 @@ def main():
 
     df = exclude_monthly(df)
     df = fix_area(df)
-    # لاحقًا: df = exclude_marketing_posts(df)
-    # لاحقًا: df = exclude_actually_sale(df)
+    df = exclude_marketing_posts(df)
+    df = exclude_actually_sale(df)
+    df = fix_price(df)
 
     save_master(df)
     print_reconciliation(df, "بعد كل خطوات الاستبعاد")
