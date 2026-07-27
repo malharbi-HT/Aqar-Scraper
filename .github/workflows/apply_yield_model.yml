@@ -1,0 +1,28 @@
+name: Apply Yield Model
+
+on:
+  workflow_dispatch:   # تشغيل يدوي فقط -- يحسب العائد المتوقع لكل عقار بيع
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: pip install pandas numpy scikit-learn joblib
+
+      - name: Apply yield model
+        run: python apply_yield_model.py
+
+      - name: Commit results
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add data/sale_with_predicted_yield.csv data/top_investment_opportunities.csv data/suspicious_yield_needs_price_check.csv
+          git commit -m "Apply yield model $(date +'%Y-%m-%d')" || echo "No changes"
+          for i in 1 2 3 4 5; do
+            git pull --rebase origin main && git push && break
+            sleep 5
+          done
