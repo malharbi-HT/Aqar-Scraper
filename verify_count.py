@@ -97,6 +97,19 @@ def main():
         history_df.to_csv(history_path, index=False, encoding="utf-8-sig")
     print(f"تم إضافة السجل لـ {history_path}")
 
+    # نكتب حالة التغطية بملف بسيط -- الـ workflow يقرأه ويقرر هل ينشئ تنبيه (Issue) أو لا
+    # (بدون ما نوقف التشغيلة نفسها بأي حال)
+    MIN_ACCEPTABLE_COVERAGE = 97.0
+    status_path = os.path.join(DATA_DIR, "coverage_status.txt")
+    if pct < MIN_ACCEPTABLE_COVERAGE:
+        print(f"\n⚠️  التغطية ({pct:.1f}%) أقل من الحد المقبول ({MIN_ACCEPTABLE_COVERAGE}%)")
+        with open(status_path, "w", encoding="utf-8") as f:
+            f.write(f"LOW:{pct}:{total_diff}")
+    else:
+        print(f"\n✅ التغطية ({pct:.1f}%) ضمن الحد المقبول")
+        with open(status_path, "w", encoding="utf-8") as f:
+            f.write(f"OK:{pct}:{total_diff}")
+
 
 if __name__ == "__main__":
     main()
