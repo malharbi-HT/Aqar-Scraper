@@ -1,0 +1,86 @@
+name: Daily Coverage Check
+
+on:
+  schedule:
+    - cron: '0 3 * * *'   # يوميًا 3 صباحًا UTC = 6 صباحًا بتوقيت السعودية
+  workflow_dispatch:        # تشغيل يدوي من Actions
+
+jobs:
+  full_check:
+    permissions:
+      contents: write
+      issues: write
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: pip install requests beautifulsoup4 lxml pandas
+
+      - name: Crawl active IDs
+        run: python crawl_active_ids.py
+        continue-on-error: true
+
+      - name: Track status changes
+        if: always()
+        run: python track_status.py
+
+      - name: Filter active only
+        if: always()
+        run: python filter_active_only.py
+
+      - name: Find suspicious districts
+        if: always()
+        run: python find_suspicious_districts.py
+        continue-on-error: true
+
+      - name: Commit intermediate data
+        if: always()
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add data/
+          git commit -m "Daily coverage data $(date +'%Y-%m-%d')" || echo "No changes"
+          for i in 1 2 3 4 5; do
+            git pull --rebase origin main && git push && break
+            sleep 5
+          done
+
+      # هذي الخطوة ما توقف التشغيلة أبدًا -- بس تسجل النتيجة بملف
+      - name: Verify count
+        run: python verify_count.py
+
+      - name: Commit verify history
+        if: always()
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          if [ -f data/verify_count_history.csv ]; then
+            git add data/verify_count_history.csv
+            git commit -m "Coverage history $(date +'%Y-%m-%d')" || echo "No changes"
+            for i in 1 2 3 4 5; do
+              git pull --rebase origin main && git push && break
+              sleep 5
+            done
+          fi
+
+      # لو التغطية تحت الحد، ننشئ Issue تلقائي -- GitHub يرسلك إيميل تنبيه
+      # على أي Issue جديد بريبوك، بدون ما نوقف أو نفشّل أي خطوة بالتشغيلة
+      - name: Create alert issue if coverage is low
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if [ -f data/coverage_status.txt ]; then
+            STATUS=$(cat data/coverage_status.txt)
+            if [[ $STATUS == LOW:* ]]; then
+              PCT=$(echo $STATUS | cut -d: -f2)
+              DIFF=$(echo $STATUS | cut -d: -f3)
+              gh issue create \
+                --title "⚠️ تغطية البيانات ناقصة: ${PCT}% ($(date +'%Y-%m-%d'))" \
+                --body "نسبة التغطية اليوم ${PCT}% (أقل من 97%). الفرق عن الموقع الحقيقي: ${DIFF} إعلان. راجع data/verify_count_history.csv و data/suspicious_districts.csv للتفاصيل."
+            else
+              echo "التغطية ضمن الحد المقبول -- ما فيه حاجة لإنشاء تنبيه"
+            fi
+          fi
