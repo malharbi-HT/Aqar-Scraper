@@ -1,0 +1,43 @@
+name: Daily Rent Pipeline (Full Auto)
+
+on:
+  schedule:
+    - cron: '0 2 * * *'   # يوميًا 2 صباحًا UTC = 5 الفجر بتوقيت السعودية
+  workflow_dispatch:        # تشغيل يدوي إضافي متاح
+
+jobs:
+  pipeline:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: pip install -r requirements.txt
+      - run: pip install scikit-learn joblib
+
+      - name: 1. Scrape rent (daily incremental)
+        run: python scraper_rent.py
+        continue-on-error: true
+
+      - name: 2. Clean rent data (monthly + area + price + marketing)
+        if: always()
+        run: python clean_rent_data.py
+        continue-on-error: true
+
+      - name: 3. Detect anomalies
+        if: always()
+        run: python detect_anomalies_rent.py
+        continue-on-error: true
+
+      - name: Commit and push all results
+        if: always()
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add data/
+          git commit -m "Daily rent pipeline $(date +'%Y-%m-%d')" || echo "No changes"
+          for i in 1 2 3 4 5; do
+            git pull --rebase origin main && git push && break
+            sleep 5
+          done
