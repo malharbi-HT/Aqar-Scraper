@@ -2,7 +2,7 @@ name: Coverage Check (Daily Auto)
 
 on:
   schedule:
-    - cron: '0 1 * * *'   # يوميًا 1 صباحًا UTC = 4 الفجر بتوقيت السعودية (بعد سحب البيع بساعة)
+    - cron: '21 18 * * *'   # يوميًا 6:21 مساءً UTC ≈ 9:21 مساءً بتوقيت السعودية
   workflow_dispatch:        # تشغيل يدوي إضافي متاح
 
 jobs:
