@@ -1,7 +1,9 @@
 name: Filter Active Only (Rent)
 
 on:
-  workflow_dispatch:   # تشغيل يدوي فقط -- يفلتر النشط بس (يعتمد على تتبع الحالة أولاً)
+  schedule:
+    - cron: '29 0 * * 0'   # كل أحد 12:29 صباحًا UTC ≈ 3:29 فجرًا بتوقيت السعودية (استمرار ليلة السبت)
+  workflow_dispatch:   # تشغيل يدوي إضافي متاح
 
 jobs:
   filter:
