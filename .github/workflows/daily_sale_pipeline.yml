@@ -2,7 +2,7 @@ name: Daily Sale Pipeline (Full Auto)
 
 on:
   schedule:
-    - cron: '0 0 * * *'   # يوميًا 12 منتصف الليل UTC = 3 الفجر بتوقيت السعودية
+    - cron: '13 18 * * *'   # يوميًا 6:13 مساءً UTC ≈ 9:13 مساءً بتوقيت السعودية
   workflow_dispatch:        # تشغيل يدوي إضافي متاح
 
 jobs:
