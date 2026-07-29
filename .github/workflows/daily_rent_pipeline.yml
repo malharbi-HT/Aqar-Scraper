@@ -2,7 +2,7 @@ name: Daily Rent Pipeline (Full Auto)
 
 on:
   schedule:
-    - cron: '0 2 * * *'   # يوميًا 2 صباحًا UTC = 5 الفجر بتوقيت السعودية
+    - cron: '37 18 * * *'   # يوميًا 6:37 مساءً UTC ≈ 9:37 مساءً بتوقيت السعودية
   workflow_dispatch:        # تشغيل يدوي إضافي متاح
 
 jobs:
