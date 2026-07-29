@@ -1,7 +1,9 @@
 name: Track Rent Status (Full Coverage)
 
 on:
-  workflow_dispatch:   # تشغيل يدوي فقط -- مسح شامل بالأحياء الفرعية لتغطية دقيقة
+  schedule:
+    - cron: '7 18 * * 6'   # كل سبت 6:07 مساءً UTC ≈ 9:07 مساءً بتوقيت السعودية
+  workflow_dispatch:   # تشغيل يدوي إضافي متاح
 
 jobs:
   crawl:
