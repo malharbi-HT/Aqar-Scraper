@@ -1,7 +1,9 @@
 name: Track Status Rent - Table
 
 on:
-  workflow_dispatch:   # تشغيل يدوي فقط -- يبني جدول الحالة من نتيجة آخر مسح شامل
+  schedule:
+    - cron: '11 0 * * 0'   # كل أحد 12:11 صباحًا UTC ≈ 3:11 فجرًا بتوقيت السعودية (استمرار ليلة السبت، بعد المسح الثقيل بـ6 ساعات)
+  workflow_dispatch:   # تشغيل يدوي إضافي متاح
 
 jobs:
   track:
