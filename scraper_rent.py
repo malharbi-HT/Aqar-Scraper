@@ -27,6 +27,31 @@ LIST_PAGES = [
     "https://sa.aqar.fm/شقق-للإيجار/الرياض/جنوب-الرياض",
     "https://sa.aqar.fm/شقق-للإيجار/الرياض/وسط-الرياض",
 ]
+
+
+def discover_districts(direction_url):
+    """يجيب كل روابط الأحياء المذكورة بصفحة المنطقة -- عشان نمسح كل حي لحاله
+    ونتجاوز حد عمق الترقيم (Pagination Depth Limit) اللي يوقف المسح عند
+    ~150-190 صفحة لو طلبنا المنطقة كاملة دفعة وحدة."""
+    try:
+        soup = get_soup(direction_url)
+    except requests.RequestException as e:
+        print(f"فشل جلب أحياء {direction_url}: {e}")
+        return {}
+
+    districts = {}
+    for a in soup.select("a[href]"):
+        href = a["href"]
+        full = urljoin(BASE_URL, href)
+        if "حي-" not in full and "حي" not in full:
+            continue
+        if not full.startswith(direction_url + "/"):
+            continue
+        tail = full[len(direction_url) + 1:]
+        if "/" in tail or re.search(r"-\d{4,}$", tail):
+            continue
+        districts[full] = a.get_text(strip=True)
+    return districts
 MAX_PAGES_PER_CATEGORY = 200   # سقف أعلى من الحاجة الفعلية؛ السكربت يتوقف تلقائيًا عند آخر صفحة فعلية
 
 # مسارات محظورة صراحة بـ robots.txt -- لازم نتجنبها دائمًا
@@ -374,23 +399,37 @@ def main():
 
     all_links = set()
     for base in LIST_PAGES:
-        print(f"=== تصنيف: {base} ===")
-        for page_num in range(1, MAX_PAGES_PER_CATEGORY + 1):
-            page_url = base if page_num == 1 else f"{base}/{page_num}"
-            try:
-                links = collect_listing_links_from_list_page(page_url)
-            except requests.RequestException as e:
-                print(f"تخطي {page_url}: {e}")
-                continue
-            if not links:
-                print(f"وصلنا آخر صفحة عند صفحة {page_num - 1}، ننتقل للتصنيف التالي")
-                break  # وصلنا آخر صفحة متاحة لهذا التصنيف
+        print(f"=== المنطقة: {base} ===")
+        districts = discover_districts(base)
+        print(f"لقينا {len(districts)} حي بهذي المنطقة")
 
-            new_on_page = [l for l in links if extract_listing_id(l) not in existing_ids]
-            print(f"صفحة {page_num}: لقيت {len(links)} رابط ({len(new_on_page)} جديد، إجمالي حتى الآن: {len(all_links) + len(links)})")
-            all_links.update(links)
+        # نجمع كل الروابط اللي نمسحها: كل حي مكتشف + المنطقة العامة نفسها
+        # (نمسح العامة كمان عشان نلقط أي إعلان بلا حي محدد ظاهر بالقائمة الجانبية)
+        urls_to_scan = list(districts.keys()) + [base]
 
-            time.sleep(2)  # احترام السيرفر
+        for scan_url in urls_to_scan:
+            consecutive_empty = 0
+            for page_num in range(1, MAX_PAGES_PER_CATEGORY + 1):
+                page_url = scan_url if page_num == 1 else f"{scan_url}/{page_num}"
+                try:
+                    links = collect_listing_links_from_list_page(page_url)
+                except requests.RequestException as e:
+                    print(f"تخطي {page_url}: {e}")
+                    continue
+                if not links:
+                    consecutive_empty += 1
+                    if consecutive_empty >= 2:
+                        break
+                    time.sleep(2)
+                    continue
+                consecutive_empty = 0
+
+                new_on_page = [l for l in links if extract_listing_id(l) not in existing_ids]
+                all_links.update(links)
+                if new_on_page:
+                    print(f"  {scan_url.split('/')[-1]} صفحة {page_num}: {len(new_on_page)} جديد (إجمالي تراكمي: {len(all_links)})")
+
+                time.sleep(1.5)  # احترام السيرفر (أخف شوي بما إن الطلبات أكثر عدد)
 
     new_links = [l for l in all_links if extract_listing_id(l) not in existing_ids]
     print(f"روابط جديدة للسحب: {len(new_links)}")
