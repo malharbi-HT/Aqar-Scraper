@@ -19,6 +19,9 @@ from fix_price_nlp_rent import (
     is_marketing_request, is_actually_sale, looks_like_wrong_price,
     extract_price_from_description,
 )
+from fix_rooms_bathrooms_nlp import (
+    extract_bathrooms_from_description, extract_rooms_from_description,
+)
 
 CLEAN_EXPORT_PATH = os.path.join(DATA_DIR, "listings_rent_clean.csv")
 
@@ -94,6 +97,31 @@ def fix_area(df):
     return df
 
 
+def fix_rooms_bathrooms(df):
+    """يصحح عدد الغرف والحمامات الفاضية أو صفر بالغلط، من نص الوصف"""
+    active = df[df["exclusion_reason"].isna()]
+
+    missing_bath = active[active["bathrooms"].isna() | (active["bathrooms"] == 0)]
+    fixed_bath = 0
+    for idx in missing_bath.index:
+        val = extract_bathrooms_from_description(df.loc[idx, "description"])
+        if val:
+            df.at[idx, "bathrooms"] = val
+            fixed_bath += 1
+
+    missing_rooms = active[active["rooms"].isna() | (active["rooms"] == 0)]
+    fixed_rooms = 0
+    for idx in missing_rooms.index:
+        val = extract_rooms_from_description(df.loc[idx, "description"])
+        if val:
+            df.at[idx, "rooms"] = val
+            fixed_rooms += 1
+
+    print(f"[تصحيح الغرف/الحمامات] صححنا {fixed_bath} حمام من أصل {len(missing_bath)} فاضي/صفر")
+    print(f"[تصحيح الغرف/الحمامات] صححنا {fixed_rooms} غرفة من أصل {len(missing_rooms)} فاضي/صفر")
+    return df
+
+
 # ============================================================
 # (هنا نضيف دوال جديدة لاحقًا: exclude_marketing_posts، إلخ)
 # كل دالة جديدة نضيفها هنا، ونستدعيها بترتيبها بدالة main()
@@ -164,6 +192,7 @@ def main():
 
     df = exclude_monthly(df)
     df = fix_area(df)
+    df = fix_rooms_bathrooms(df)
     df = exclude_marketing_posts(df)
     df = exclude_actually_sale(df)
     df = fix_price(df)
