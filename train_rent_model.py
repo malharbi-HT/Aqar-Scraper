@@ -16,7 +16,9 @@ import os
 import joblib
 
 DATA_DIR = os.path.join(os.path.dirname(__file__), "data")
-INPUT_PATH = os.path.join(DATA_DIR, "listings_rent_clean.csv")
+CLEAN_PATH = os.path.join(DATA_DIR, "listings_rent_clean.csv")
+NORMAL_PATH = os.path.join(DATA_DIR, "listings_rent_normal.csv")
+INPUT_PATH = NORMAL_PATH if os.path.exists(NORMAL_PATH) else CLEAN_PATH
 MODEL_PATH = os.path.join(DATA_DIR, "rent_model.joblib")
 DISTRICT_ENCODING_PATH = os.path.join(DATA_DIR, "rent_model_district_encoding.joblib")
 
@@ -35,16 +37,29 @@ def add_furnished_flag(df):
 
 
 def encode_district(df, district_encoding=None):
-    """يستبدل اسم الحي برقم واحد يمثل متوسط سعره (Target Encoding).
-    لو district_encoding معطى (وقت التطبيق لاحقًا)، نستخدمه بدل نحسبه من جديد."""
-    if district_encoding is None:
-        district_encoding = df.groupby("district")[TARGET_COL].median()
+    """يستبدل اسم الحي برقم يمثل متوسط سعره (Target Encoding)، لكن بتنعيم إحصائي
+    (Smoothing) -- الأحياء اللي عندها عينات قليلة تُرجَّح أقرب للمتوسط العام،
+    عشان ما يسيطر إعلان شاذ وحيد على توقع الحي كامل."""
     global_median = df[TARGET_COL].median()
+
+    if district_encoding is None:
+        SMOOTHING_K = 20  # كل ما زاد، كل ما احتجنا عينات أكثر عشان نثق بمتوسط الحي الخاص
+        grouped = df.groupby("district")[TARGET_COL].agg(["median", "count"])
+        grouped["smoothed"] = (
+            (grouped["count"] * grouped["median"] + SMOOTHING_K * global_median)
+            / (grouped["count"] + SMOOTHING_K)
+        )
+        district_encoding = grouped["smoothed"]
+        print(f"\n--- عينة من تنعيم الأحياء (عدد قليل مقابل كثير) ---")
+        sample = grouped.sort_values("count").head(3)
+        print(sample.to_string())
+
     df["district_encoded"] = df["district"].map(district_encoding).fillna(global_median)
     return df, district_encoding
 
 
 def main():
+    print(f"نقرأ من: {INPUT_PATH}")
     df = pd.read_csv(INPUT_PATH, encoding="utf-8-sig")
     print(f"عدد الصفوف الكلي: {len(df)}")
 
