@@ -30,6 +30,7 @@ FEATURE_COLS = [
 ]
 
 YIELD_THRESHOLD = 6.0  # النسبة اللي نعتبرها "فرصة جيدة"
+MAX_AGE_YEARS = 10  # نستبعد العقارات الأقدم من هذا من قائمة الفرص النهائية
 
 
 def main():
@@ -82,9 +83,13 @@ def main():
     df_sorted = df.sort_values("expected_yield_pct", ascending=False)
 
     opportunities = df_sorted[df_sorted["expected_yield_pct"] >= YIELD_THRESHOLD]
+
+    before_age_filter = len(opportunities)
+    opportunities = opportunities[opportunities["age_years"] <= MAX_AGE_YEARS]
+    print(f"استبعدنا {before_age_filter - len(opportunities)} عقار عمره أكثر من {MAX_AGE_YEARS} سنين من قائمة الفرص")
     print(f"\n🎯 عقارات بعائد متوقع فوق {YIELD_THRESHOLD}%: {len(opportunities)} من {len(df)}")
 
-    cols_to_show = ["listing_id", "url", "district", "price", "area_sqm", "rooms",
+    cols_to_show = ["listing_id", "url", "district", "price", "area_sqm", "rooms", "age_years",
                      "predicted_annual_rent", "expected_yield_pct"]
 
     print(f"\n--- أفضل 15 فرصة (أعلى عائد متوقع) ---")
