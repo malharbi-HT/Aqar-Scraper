@@ -11,6 +11,7 @@ import os
 DATA_DIR = os.path.join(os.path.dirname(__file__), "data")
 
 # نستخدم النسخة النظيفة لو موجودة (بعد الحدود اليدوية)، وإلا الخام
+ROOMS_FIXED_PATH = os.path.join(DATA_DIR, "listings_sale_rooms_fixed.csv")
 CROSSCHECKED_PATH = os.path.join(DATA_DIR, "listings_sale_area_crosschecked.csv")
 PRICE_FIXED_PATH = os.path.join(DATA_DIR, "listings_sale_price_fixed.csv")
 FINAL_PATH = os.path.join(DATA_DIR, "listings_sale_final.csv")
@@ -21,7 +22,9 @@ CONTAMINATION = 0.03  # النسبة المتوقعة من البيانات ال
 
 
 def main():
-    if os.path.exists(CROSSCHECKED_PATH):
+    if os.path.exists(ROOMS_FIXED_PATH):
+        input_path = ROOMS_FIXED_PATH
+    elif os.path.exists(CROSSCHECKED_PATH):
         input_path = CROSSCHECKED_PATH
     elif os.path.exists(PRICE_FIXED_PATH):
         input_path = PRICE_FIXED_PATH
