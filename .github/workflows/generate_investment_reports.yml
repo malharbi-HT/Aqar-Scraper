@@ -1,0 +1,28 @@
+name: Generate Investment Reports
+
+on:
+  workflow_dispatch:   # تشغيل يدوي فقط -- يبني تقرير تحليلي غني لكل فرصة استثمارية
+
+jobs:
+  generate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: pip install pandas numpy scikit-learn joblib
+
+      - name: Generate reports
+        run: python generate_investment_reports.py
+
+      - name: Commit results
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add data/investment_reports.csv
+          git commit -m "Generate investment reports $(date +'%Y-%m-%d')" || echo "No changes"
+          for i in 1 2 3 4 5; do
+            git pull --rebase origin main && git push && break
+            sleep 5
+          done
