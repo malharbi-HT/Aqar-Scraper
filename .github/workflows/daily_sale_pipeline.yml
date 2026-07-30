@@ -40,7 +40,12 @@ jobs:
         run: python cross_check_area.py
         continue-on-error: true
 
-      - name: 6. Detect anomalies
+      - name: 6. Fix rooms/bathrooms
+        if: always()
+        run: python fix_rooms_bathrooms_sale.py
+        continue-on-error: true
+
+      - name: 7. Detect anomalies
         if: always()
         run: python detect_anomalies.py
         continue-on-error: true
