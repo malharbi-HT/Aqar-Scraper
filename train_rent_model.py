@@ -63,6 +63,11 @@ def main():
     df = pd.read_csv(INPUT_PATH, encoding="utf-8-sig")
     print(f"عدد الصفوف الكلي: {len(df)}")
 
+    # صفر بعمود الحمامات/الغرف يعني "ما عرفنا العدد" (بيانات مجهولة)، مو "فعلاً صفر"
+    # (شقة بدون حمام مستحيل أصلاً) -- نعاملها كمجهول عشان ما تعطي النموذج إشارة مصطنعة
+    df["bathrooms"] = df["bathrooms"].replace(0, pd.NA)
+    df["rooms"] = df["rooms"].replace(0, pd.NA)
+
     required_cols = ["area_sqm", "rooms", "bathrooms", "livings", "age_years",
                       "latitude", "longitude", "district", TARGET_COL]
     before = len(df)
