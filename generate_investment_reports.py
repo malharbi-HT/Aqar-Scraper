@@ -45,7 +45,8 @@ RISK_PATTERNS = {
 
 def compute_rent_range(model, X_row):
     """يستخدم توزيع تنبؤات كل شجرة بالنموذج عشان يطلع نطاق (10%-50%-90%) بدل رقم واحد"""
-    tree_predictions = np.array([tree.predict(X_row)[0] for tree in model.estimators_])
+    X_values = X_row.values  # نحول لمصفوفة نمباي -- يتفادى تحذير أسماء الأعمدة بالأشجار الفردية
+    tree_predictions = np.array([tree.predict(X_values)[0] for tree in model.estimators_])
     low = np.percentile(tree_predictions, 10)
     mid = np.percentile(tree_predictions, 50)
     high = np.percentile(tree_predictions, 90)
