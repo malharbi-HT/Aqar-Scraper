@@ -9,6 +9,7 @@ import numpy as np
 import re
 import os
 import joblib
+from official_district_data import OFFICIAL_RENT_PER_SQM
 
 DATA_DIR = os.path.join(os.path.dirname(__file__), "data")
 OPPORTUNITIES_PATH = os.path.join(DATA_DIR, "top_investment_opportunities.csv")
@@ -112,6 +113,14 @@ def main():
 
         rent_low, rent_mid, rent_high = compute_rent_range(model, X_row)
 
+        # لو عندنا بيانات رسمية موثّقة لهذا الحي، نستبدل تقدير النموذج بالرقم
+        # الرسمي (سعر المتر × مساحة العقار الفعلية) -- أدق بكثير من تقدير الإعلانات
+        district_name = row["district"]
+        is_official = district_name in OFFICIAL_RENT_PER_SQM
+        if is_official:
+            official_rent = OFFICIAL_RENT_PER_SQM[district_name] * row["area_sqm"]
+            rent_low = rent_mid = rent_high = official_rent
+
         yield_low = round(rent_low / row["price"] * 100, 2)
         yield_mid = round(rent_mid / row["price"] * 100, 2)
         yield_high = round(rent_high / row["price"] * 100, 2)
@@ -144,6 +153,7 @@ def main():
             "risks": " | ".join(risks),
             "verdict": verdict,
             "verdict_reason": verdict_reason,
+            "rent_source": "رسمي موثّق (وزارة العدل/إيجار)" if is_official else "تقدير نموذج (إعلانات)",
             "description": full_row.get("description"),
         })
 
