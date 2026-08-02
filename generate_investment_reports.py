@@ -66,11 +66,11 @@ def extract_risks(title, description):
 def classify_verdict(yield_low):
     """التوصية مبنية على العائد الإجمالي (بدون خصم صيانة/رسوم ملاك) -- أسوأ سيناريو بالنطاق"""
     if yield_low >= 7:
-        return "🟢 Proceed", "العائد من الإيجار وحده فوق 7% حتى بأسوأ سيناريو -- فرصة قوية"
+        return "🟢 Proceed", f"العائد من الإيجار وحده {yield_low:.1f}% حتى بأسوأ سيناريو -- فرصة قوية"
     elif yield_low >= 5:
-        return "🟡 Proceed مشروط", "العائد من الإيجار فوق 5% -- مقبول، راجع التفاصيل قبل القرار"
+        return "🟡 Proceed مشروط", f"العائد من الإيجار {yield_low:.1f}% -- مقبول، راجع التفاصيل قبل القرار"
     else:
-        return "🔴 مراجعة دقيقة", "العائد من الإيجار أقل من 5% حتى بأفضل تقدير متحفّظ"
+        return "🔴 مراجعة دقيقة", f"العائد من الإيجار {yield_low:.1f}% بس حتى بأفضل تقدير متحفّظ -- ضعيف"
 
 
 def main():
@@ -127,9 +127,15 @@ def main():
         reports.append({
             "listing_id": listing_id,
             "url": row["url"],
+            "title": full_row.get("title"),
             "district": row["district"],
+            "direction": full_row.get("direction"),
             "price": row["price"],
             "area_sqm": row["area_sqm"],
+            "rooms": row["rooms"],
+            "bathrooms": full_row.get("bathrooms"),
+            "livings": full_row.get("livings"),
+            "age_years": full_row.get("age_years"),
             "price_per_sqm": price_per_sqm,
             "rent_low": round(rent_low), "rent_mid": round(rent_mid), "rent_high": round(rent_high),
             "yield_low_pct": yield_low, "yield_mid_pct": yield_mid, "yield_high_pct": yield_high,
@@ -138,6 +144,7 @@ def main():
             "risks": " | ".join(risks),
             "verdict": verdict,
             "verdict_reason": verdict_reason,
+            "description": full_row.get("description"),
         })
 
     report_df = pd.DataFrame(reports).sort_values("yield_low_pct", ascending=False)
