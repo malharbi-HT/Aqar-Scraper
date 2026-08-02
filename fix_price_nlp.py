@@ -55,6 +55,20 @@ def is_marketing_request(description):
     return any(kw in desc for kw in MARKETING_REQUEST_KEYWORDS)
 
 
+# حد أدنى لعدد الكلمات -- وصف أقصر من هذا يعتبر مشبوه (إشارة احتياطية على "طلب تسويق"
+# محتمل، خصوصًا للبيانات القديمة اللي ما فيها عمود published أصلاً)
+MIN_DESCRIPTION_WORDS = 8
+
+
+def looks_like_empty_placeholder(description):
+    """يتحقق هل الوصف فاضي أو قصير جدًا بشكل مريب (نمط شائع بإعلانات 'طلب تسويق')"""
+    desc = str(description or "").strip()
+    if not desc or desc.lower() == "nan":
+        return True
+    word_count = len(desc.split())
+    return word_count < MIN_DESCRIPTION_WORDS
+
+
 def is_actually_rental(description):
     """يتحقق هل إعلان 'البيع' هذا فعليًا إيجار متصنّف غلط"""
     desc = str(description or "")
@@ -138,6 +152,12 @@ def main():
     marketing_count = df["is_marketing"].sum()
     print(f"طلبات تسويق (سنحذفها، مو إعلانات حقيقية): {marketing_count}")
     df = df[~df["is_marketing"]].drop(columns=["is_marketing"])
+
+    # فحص احتياطي منفصل: وصف فاضي/قصير جدًا (إشارة ضعيفة على "طلب تسويق" محتمل،
+    # خصوصًا للبيانات القديمة اللي ما فيها عمود published) -- نعلّمه بس ما نحذفه تلقائيًا
+    df["suspicious_empty_description"] = df["description"].apply(looks_like_empty_placeholder)
+    suspicious_count = df["suspicious_empty_description"].sum()
+    print(f"⚠️  وصف فاضي/قصير جدًا (إشارة ضعيفة، معلَّم بعمود للمراجعة، مو محذوف): {suspicious_count}")
 
     # نكتشف ونحذف إعلانات "بيع" اللي هي فعليًا إيجار متصنّف غلط
     df["is_actually_rental"] = df["description"].apply(is_actually_rental)
