@@ -55,6 +55,7 @@ CSV_FIELDS = [
     "description", "latitude", "longitude", "images", "images_count",
     "advertiser_name", "advertiser_company", "advertiser_type",
     "created_at", "published_at", "last_update", "views", "date_scraped",
+    "published", "price_text", "price_was_missing",
 ]
 
 IMAGE_BASE_URL = "https://images.aqar.fm/webp/750x0/props/"
@@ -281,6 +282,11 @@ def scrape_listing_detail(url):
     if listing:
         data["title"] = listing.get("title")
         data["price"] = listing.get("price") or listing.get("rega_total_price")
+        # نلقط أي مؤشر متاح لحالة النشر -- عشان نستبعد "طلب تسويق" لاحقًا بمرحلة التنظيف
+        # (بدون ما نغيّر منطق السحب نفسه، نسحب كل شي زي العادة)
+        data["published"] = listing.get("published")
+        data["price_text"] = listing.get("price_text")
+        data["price_was_missing"] = listing.get("price") is None  # هل رجعنا فعليًا لحقل بديل
         data["area_sqm"] = listing.get("area")
         data["rooms"] = listing.get("beds")
         data["bathrooms"] = listing.get("wc")
