@@ -126,7 +126,15 @@ def main():
     print(f"عدد الصفوف: {len(df)}")
 
     # نحذف طلبات التسويق (مو إعلانات عقار حقيقية)
-    df["is_marketing"] = df["description"].apply(is_marketing_request)
+    # نستبعد طلبات التسويق: إما مذكورة صراحة بالوصف، أو مكتشفة من حالة النشر الفعلية
+    # (بعض الإعلانات "طلب تسويق" هي حالة عرض بالموقع، مو نص بالوصف -- لهذا نفحص عمود حالة النشر كمان)
+    text_marketing = df["description"].apply(is_marketing_request)
+    status_marketing = pd.Series(False, index=df.index)
+    if "published" in df.columns:
+        status_marketing = status_marketing | (df["published"] == False)
+    if "price_text" in df.columns:
+        status_marketing = status_marketing | df["price_text"].astype(str).str.contains("طلب تسويق", na=False)
+    df["is_marketing"] = text_marketing | status_marketing
     marketing_count = df["is_marketing"].sum()
     print(f"طلبات تسويق (سنحذفها، مو إعلانات حقيقية): {marketing_count}")
     df = df[~df["is_marketing"]].drop(columns=["is_marketing"])
