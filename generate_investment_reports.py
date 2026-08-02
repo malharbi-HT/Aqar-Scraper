@@ -63,14 +63,14 @@ def extract_risks(title, description):
     return [label for pattern, label in RISK_PATTERNS.items() if re.search(pattern, text)]
 
 
-def classify_verdict(net_yield_low):
-    """التوصية النهائية مبنية على أسوأ سيناريو (الحد الأدنى)، مو أفضل حالة -- تحفّظ أكثر"""
-    if net_yield_low >= 8:
-        return "🟢 Proceed", "العائد الصافي حتى بأسوأ سيناريو فوق 8% -- فرصة قوية"
-    elif net_yield_low >= 5:
-        return "🟡 Proceed مشروط", "العائد الصافي معقول لكن يعتمد على افتراضات الإيجار -- راجع يدويًا"
+def classify_verdict(yield_low):
+    """التوصية مبنية على العائد الإجمالي (بدون خصم صيانة/رسوم ملاك) -- أسوأ سيناريو بالنطاق"""
+    if yield_low >= 7:
+        return "🟢 Proceed", "العائد من الإيجار وحده فوق 7% حتى بأسوأ سيناريو -- فرصة قوية"
+    elif yield_low >= 5:
+        return "🟡 Proceed مشروط", "العائد من الإيجار فوق 5% -- مقبول، راجع التفاصيل قبل القرار"
     else:
-        return "🔴 مراجعة دقيقة", "العائد الصافي بأسوأ سيناريو ضعيف -- تأكد من الأرقام قبل أي قرار"
+        return "🔴 مراجعة دقيقة", "العائد من الإيجار أقل من 5% حتى بأفضل تقدير متحفّظ"
 
 
 def main():
@@ -122,7 +122,7 @@ def main():
         strengths = extract_strengths(full_row.get("description"))
         risks = extract_risks(full_row.get("title"), full_row.get("description"))
 
-        verdict, verdict_reason = classify_verdict(net_yield_low)
+        verdict, verdict_reason = classify_verdict(yield_low)
 
         reports.append({
             "listing_id": listing_id,
@@ -140,7 +140,7 @@ def main():
             "verdict_reason": verdict_reason,
         })
 
-    report_df = pd.DataFrame(reports).sort_values("net_yield_low_pct", ascending=False)
+    report_df = pd.DataFrame(reports).sort_values("yield_low_pct", ascending=False)
     report_df.to_csv(OUTPUT_PATH, index=False, encoding="utf-8-sig")
 
     print(f"عدد التقارير المبنية: {len(report_df)}")
