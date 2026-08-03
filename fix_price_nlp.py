@@ -153,11 +153,12 @@ def main():
     print(f"طلبات تسويق (سنحذفها، مو إعلانات حقيقية): {marketing_count}")
     df = df[~df["is_marketing"]].drop(columns=["is_marketing"])
 
-    # فحص احتياطي منفصل: وصف فاضي/قصير جدًا (إشارة ضعيفة على "طلب تسويق" محتمل،
-    # خصوصًا للبيانات القديمة اللي ما فيها عمود published) -- نعلّمه بس ما نحذفه تلقائيًا
+    # فحص احتياطي: وصف فاضي/قصير جدًا (إشارة قوية على "طلب تسويق" محتمل غير مكتشف
+    # بعمود published، خصوصًا بالبيانات القديمة) -- أثبت دقته عمليًا، نستبعده الآن
     df["suspicious_empty_description"] = df["description"].apply(looks_like_empty_placeholder)
     suspicious_count = df["suspicious_empty_description"].sum()
-    print(f"⚠️  وصف فاضي/قصير جدًا (إشارة ضعيفة، معلَّم بعمود للمراجعة، مو محذوف): {suspicious_count}")
+    print(f"وصف فاضي/قصير جدًا (سنحذفه -- إشارة قوية على طلب تسويق قديم): {suspicious_count}")
+    df = df[~df["suspicious_empty_description"]].drop(columns=["suspicious_empty_description"])
 
     # نكتشف ونحذف إعلانات "بيع" اللي هي فعليًا إيجار متصنّف غلط
     df["is_actually_rental"] = df["description"].apply(is_actually_rental)
