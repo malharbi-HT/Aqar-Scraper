@@ -9,6 +9,7 @@ verdict_price   -- التوصية المبنية على مقارنة سعر ال
 
 import pandas as pd
 import os
+from official_district_data import OFFICIAL_RENT_PER_SQM
 
 DATA_DIR = os.path.join(os.path.dirname(__file__), "data")
 INVESTMENT_REPORTS_PATH = os.path.join(DATA_DIR, "investment_reports.csv")
@@ -51,8 +52,13 @@ def main():
     print(f"\nعدد العقارات اللي عندها الاثنين (عائد + مقارنة صفقات): {matched_count}")
     print(f"عدد العقارات اللي عندها تقدير عائد بس (بدون مقارنة صفقات): {len(merged) - matched_count}")
 
+    # عمود يوضح هل الحي من ضمن الـ11 حي التجريبية (اللي عندنا بيانات رسمية موثقة لها)
+    eleven_districts = set(OFFICIAL_RENT_PER_SQM.keys())
+    merged["ضمن_الـ11_حي_التجريبية"] = merged["district"].isin(eleven_districts)
+
     cols_order = [
         "listing_id", "url", "title", "district", "direction",
+        "ضمن_الـ11_حي_التجريبية",
         "price", "area_sqm", "rooms", "bathrooms", "livings", "age_years",
         "price_per_sqm", "rent_low", "rent_mid", "rent_high",
         "yield_low_pct", "yield_mid_pct", "yield_high_pct",
@@ -67,6 +73,9 @@ def main():
 
     merged.to_csv(OUTPUT_PATH, index=False, encoding="utf-8-sig")
     print(f"\nتم الحفظ: {OUTPUT_PATH}")
+
+    print("\n--- توزيع العقارات: داخل/خارج الـ11 حي التجريبية ---")
+    print(merged["ضمن_الـ11_حي_التجريبية"].value_counts().to_string())
 
     print("\n--- توزيع التوصيتين مع بعض ---")
     print(merged.groupby(["verdict_yield", "verdict_price"], dropna=False).size().to_string())
