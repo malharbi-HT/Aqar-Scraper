@@ -64,7 +64,7 @@ def extract_risks(title, description):
 def classify_verdict(yield_low):
     """التوصية مبنية على العائد الإجمالي (بدون خصم صيانة/رسوم ملاك) -- أسوأ سيناريو بالنطاق"""
     if yield_low >= 7:
-        return "🟢 Proceed", f"العائد من الإيجار وحده {yield_low:.1f}% حتى بأسوأ سيناريو -- فرصة قوية"
+        return "🟢 Proceed", f"العائد من الإيجار وحده {yield_low:.1f}%"
     elif yield_low >= 5:
         return "🟡 Proceed مشروط", f"العائد من الإيجار {yield_low:.1f}% -- مقبول، راجع التفاصيل قبل القرار"
     else:
