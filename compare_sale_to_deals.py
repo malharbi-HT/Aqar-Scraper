@@ -32,9 +32,10 @@ MIN_COMPARABLE_DEALS = 3
 
 def find_comparable_deals(deals_district, ad_area):
     """يرجع الصفقات اللي مساحتها قريبة من مساحة الإعلان (±25%)"""
+    area_col = "المساحة (متر مربع)"
     low = ad_area * (1 - AREA_TOLERANCE_PCT)
     high = ad_area * (1 + AREA_TOLERANCE_PCT)
-    return deals_district[(deals_district["Area"] >= low) & (deals_district["Area"] <= high)]
+    return deals_district[(deals_district[area_col] >= low) & (deals_district[area_col] <= high)]
 
 
 def classify(ratio):
@@ -63,7 +64,7 @@ def main():
     results = []
     for _, ad in ads.iterrows():
         district = ad["حي_مطابق"]
-        deals_district = deals[deals["حي"] == district] if "حي" in deals.columns else deals[deals["حي "] == district]
+        deals_district = deals[deals["الحي"] == district]
         if len(deals_district) == 0:
             continue  # ما عندنا صفقات لهالحي، نتخطاه
 
@@ -72,7 +73,7 @@ def main():
             continue  # عينة قليلة جدًا، ما نثق بالمقارنة
 
         ad_price_per_sqm = ad["price"] / ad["area_sqm"]
-        comparable_median_price_per_sqm = comparable["Meter_price"].median()
+        comparable_median_price_per_sqm = comparable["سعر المتر المربع (ريال)"].median()
         ratio = ad_price_per_sqm / comparable_median_price_per_sqm
 
         verdict, reason = classify(ratio)
