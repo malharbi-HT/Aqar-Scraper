@@ -151,6 +151,11 @@ def main():
         })
 
     report_df = pd.DataFrame(reports).sort_values("yield_low_pct", ascending=False)
+
+    before_filter = len(report_df)
+    report_df = report_df[report_df["yield_low_pct"] > 6]
+    print(f"استبعدنا {before_filter - len(report_df)} عقار بعائد 6% أو أقل (بقينا بس فوق 6%)")
+
     report_df.to_csv(OUTPUT_PATH, index=False, encoding="utf-8-sig")
 
     print(f"عدد التقارير المبنية: {len(report_df)}")
