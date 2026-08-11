@@ -1,0 +1,25 @@
+name: Compare Sale To Deals
+
+on:
+  workflow_dispatch:   # تشغيل يدوي فقط -- يقارن إعلانات البيع بصفقات وزارة العدل الرسمية
+
+jobs:
+  compare:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: pip install pandas
+      - run: python compare_sale_to_deals.py
+      - name: Commit result
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add data/sale_price_verification.csv
+          git commit -m "Compare sale ads to official deals" || echo "No changes"
+          for i in 1 2 3 4 5; do
+            git pull --rebase origin main && git push && break
+            sleep 5
+          done
