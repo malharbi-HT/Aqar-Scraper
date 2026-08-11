@@ -23,9 +23,6 @@ FURNISHED_PATTERN = re.compile(r"مفروش|مؤثث")
 FEATURE_COLS = ["area_sqm", "rooms", "bathrooms", "livings", "age_years",
                 "latitude", "longitude", "district_encoded", "is_furnished"]
 
-# نسبة مصاريف تشغيل تقديرية (اتحاد ملاك + صيانة + شغور + عمولة تأجير) -- قابلة للتعديل
-OPERATING_EXPENSE_PCT = 0.16
-
 # كلمات تدل على مزايا إيجابية (نقاط قوة) -- نفحص وجودها بالوصف
 STRENGTH_KEYWORDS = {
     "مصعد": "يوجد مصعد",
@@ -125,9 +122,6 @@ def main():
         yield_mid = round(rent_mid / row["price"] * 100, 2)
         yield_high = round(rent_high / row["price"] * 100, 2)
 
-        net_rent_low = rent_low * (1 - OPERATING_EXPENSE_PCT)
-        net_yield_low = round(net_rent_low / row["price"] * 100, 2)
-
         strengths = extract_strengths(full_row.get("description"))
         risks = extract_risks(full_row.get("title"), full_row.get("description"))
 
@@ -148,7 +142,6 @@ def main():
             "price_per_sqm": price_per_sqm,
             "rent_low": round(rent_low), "rent_mid": round(rent_mid), "rent_high": round(rent_high),
             "yield_low_pct": yield_low, "yield_mid_pct": yield_mid, "yield_high_pct": yield_high,
-            "net_yield_low_pct": net_yield_low,
             "strengths": " | ".join(strengths),
             "risks": " | ".join(risks),
             "verdict": verdict,
