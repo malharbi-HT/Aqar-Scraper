@@ -180,6 +180,16 @@ def main():
                 {k: v for k, v in conflicts.items() if v is not None}, ensure_ascii=False
             )
             new_row["llm_notes"] = result.get("notes", "")
+
+            # لو فيه تعارض بيانات حقيقي، نضيفه لعمود risks الموجود (مو نستبدله)
+            found_conflicts = {k: v for k, v in conflicts.items() if v is not None}
+            if found_conflicts:
+                conflict_text = "تعارض بيانات اكتشفه التحليل الآلي: " + ", ".join(
+                    f"{field}={value} بالوصف (مسجّل عندنا {row.get(field)})"
+                    for field, value in found_conflicts.items()
+                )
+                existing_risks = str(new_row.get("risks") or "").strip()
+                new_row["risks"] = (existing_risks + " | " + conflict_text) if existing_risks else conflict_text
             output_rows.append(new_row)
 
         if i % 10 == 0:
