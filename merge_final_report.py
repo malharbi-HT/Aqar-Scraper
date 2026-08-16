@@ -60,6 +60,7 @@ def main():
         "listing_id", "url", "title", "district", "direction",
         "ضمن_الـ11_حي_التجريبية",
         "price", "area_sqm", "rooms", "bathrooms", "livings", "age_years",
+        "مؤثثة", "رقم_التواصل",
         "price_per_sqm", "rent_low", "rent_mid", "rent_high",
         "yield_low_pct", "yield_mid_pct", "yield_high_pct",
         "strengths", "risks",
