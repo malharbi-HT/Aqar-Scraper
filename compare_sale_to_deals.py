@@ -31,11 +31,18 @@ MIN_COMPARABLE_DEALS = 3
 
 
 def find_comparable_deals(deals_district, ad_area):
-    """يرجع الصفقات اللي مساحتها قريبة من مساحة الإعلان (±25%)"""
+    """يرجع الصفقات اللي مساحتها قريبة من مساحة الإعلان (±25%)، ونوعها شقة بس"""
     area_col = "المساحة (متر مربع)"
+    type_col = "النوع"  # ⚠️ تأكد هذا الاسم مطابق بالضبط لعمود نوع العقار بملفك
+
     low = ad_area * (1 - AREA_TOLERANCE_PCT)
     high = ad_area * (1 + AREA_TOLERANCE_PCT)
-    return deals_district[(deals_district[area_col] >= low) & (deals_district[area_col] <= high)]
+    comparable = deals_district[(deals_district[area_col] >= low) & (deals_district[area_col] <= high)]
+
+    if type_col in comparable.columns:
+        comparable = comparable[comparable[type_col].astype(str).str.contains("شق", na=False)]
+
+    return comparable
 
 
 def classify(ratio):
