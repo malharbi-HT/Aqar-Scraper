@@ -25,13 +25,57 @@ FEATURE_COLS = ["area_sqm", "rooms", "bathrooms", "livings", "age_years",
 
 # كلمات تدل على مزايا إيجابية (نقاط قوة) -- نفحص وجودها بالوصف
 STRENGTH_KEYWORDS = {
+    # مرافق المبنى
     "مصعد": "يوجد مصعد",
     "موقف": "يوجد موقف سيارة",
+    "قبو": "يوجد قبو/مواقف سفلية",
+    "خزان": "خزانات مياه مستقلة",
+    "حارس": "يوجد حارس/أمن",
+    "كاميرات": "كاميرات مراقبة",
+    "مسبح": "يوجد مسبح",
+    "نادي": "نادي رياضي/صالة رياضية",
+    # الموقع والخدمات
     "مترو": "قريب من محطة مترو",
     "دائري": "قريب من طريق دائري رئيسي",
-    "خزان": "خزانات مياه مستقلة",
+    "مسجد": "قريب من مسجد",
+    "مدارس": "قريب من مدارس",
+    "مدرسة": "قريب من مدرسة",
+    "خدمات": "قريب من الخدمات",
+    "حديقة": "قريب من حديقة",
+    "شارع تجاري": "على شارع تجاري",
+    # حالة العقار والتشطيب
     "تشطيب": "تشطيبات حديثة مذكورة",
     "جديد": "عقار جديد",
+    "لم تسكن": "لم تُسكن من قبل",
+    "فاخر": "تشطيب فاخر",
+    "راقي": "مستوى راقٍ",
+    # مزايا الوحدة
+    "مدخل خاص": "مدخل خاص",
+    "مدخلين": "مدخلين منفصلين",
+    "سطح": "يوجد سطح/ملحق",
+    "بلكونة": "يوجد بلكونة",
+    "بلكونه": "يوجد بلكونة",
+    "تراس": "يوجد تراس",
+    "مطبخ راكب": "مطبخ راكب",
+    "مكيفات": "مكيفات مركّبة",
+    "غرفة خادمة": "غرفة خادمة",
+    "غرفة سائق": "غرفة سائق",
+    "مستودع": "يوجد مستودع",
+    "غرفة غسيل": "غرفة غسيل",
+    "دولاب": "دواليب مدمجة",
+    "ماستر": "غرفة ماستر بحمام خاص",
+    "مجلس": "يوجد مجلس منفصل",
+    "حوش": "يوجد حوش/فناء",
+    "إطلالة": "إطلالة مميزة",
+    "اطلاله": "إطلالة مميزة",
+    "زاوية": "قطعة زاوية",
+    "شمالية": "واجهة شمالية",
+    # الجانب المالي/القانوني
+    "صك": "صك إلكتروني/مستقل",
+    "تمويل": "قابل للتمويل البنكي",
+    "ضمان": "يوجد ضمان",
+    "عداد مستقل": "عدادات مستقلة",
+    "جاهزة للسكن": "جاهزة للسكن فورًا",
 }
 
 # كلمات/أنماط تدل على مخاطر يستاهل الانتباه لها
@@ -51,9 +95,42 @@ def compute_rent_range(model, X_row):
     return low, mid, high
 
 
+PHONE_PATTERN = re.compile(r"(?:\+?966|00966)?[\s\-]?0?5(?:[\s\-]?\d){8}")
+
+ARABIC_DIGITS = str.maketrans("٠١٢٣٤٥٦٧٨٩", "0123456789")
+
+
+def extract_phone(description):
+    """يستخرج رقم جوال سعودي من الوصف لو مذكور (يدعم الأرقام العربية والصيغ المختلفة)"""
+    desc = str(description or "").translate(ARABIC_DIGITS)
+    match = PHONE_PATTERN.search(desc)
+    if not match:
+        return None
+    # ننظّف الرقم من المسافات والشرطات
+    return re.sub(r"[\s\-]", "", match.group(0))
+
+
 def extract_strengths(description):
     desc = str(description or "")
     return [label for keyword, label in STRENGTH_KEYWORDS.items() if keyword in desc]
+
+
+def extract_contact_number(description):
+    """يستخرج رقم جوال سعودي من الوصف لو مذكور (05xxxxxxxx أو 9665xxxxxxxx)"""
+    desc = str(description or "").translate(str.maketrans("٠١٢٣٤٥٦٧٨٩", "0123456789"))
+    # نشيل الفواصل الشائعة بين الأرقام عشان نلقط الصيغ المتباعدة
+    normalized = re.sub(r"[\s\-\.]", "", desc)
+
+    patterns = [
+        r"(?:00966|\+966|966)(5\d{8})",   # صيغة دولية
+        r"(0?5\d{8})",                     # صيغة محلية
+    ]
+    for pattern in patterns:
+        m = re.search(pattern, normalized)
+        if m:
+            number = m.group(1)
+            return "0" + number if not number.startswith("0") else number
+    return None
 
 
 def extract_risks(title, description):
@@ -124,6 +201,7 @@ def main():
 
         strengths = extract_strengths(full_row.get("description"))
         risks = extract_risks(full_row.get("title"), full_row.get("description"))
+        phone = extract_phone(full_row.get("description"))
 
         verdict, verdict_reason = classify_verdict(yield_low)
 
@@ -139,6 +217,8 @@ def main():
             "bathrooms": full_row.get("bathrooms"),
             "livings": full_row.get("livings"),
             "age_years": full_row.get("age_years"),
+            "مؤثثة": "نعم" if is_furnished else "لا",
+            "رقم_التواصل": phone,
             "price_per_sqm": price_per_sqm,
             "rent_low": round(rent_low), "rent_mid": round(rent_mid), "rent_high": round(rent_high),
             "yield_low_pct": yield_low, "yield_mid_pct": yield_mid, "yield_high_pct": yield_high,
