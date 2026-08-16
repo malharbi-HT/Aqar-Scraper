@@ -1,0 +1,41 @@
+name: LLM Extract Units
+
+on:
+  workflow_dispatch:
+    inputs:
+      test_mode:
+        description: 'تشغيل تجريبي (20 عقار بس: 10 مشاريع محتملة + 10 عاديين)'
+        required: false
+        type: boolean
+        default: true
+
+jobs:
+  extract:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: pip install pandas
+
+      - name: Run LLM extraction
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          if [ "${{ inputs.test_mode }}" = "true" ]; then
+            python llm_extract_units.py --test
+          else
+            python llm_extract_units.py
+          fi
+
+      - name: Commit result
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add data/llm_verified_units.csv
+          git commit -m "LLM extract units" || echo "No changes"
+          for i in 1 2 3 4 5; do
+            git pull --rebase origin main && git push && break
+            sleep 5
+          done
