@@ -1,0 +1,25 @@
+name: Add Final Scoring
+
+on:
+  workflow_dispatch:   # تشغيل يدوي فقط -- يضيف التوصية النهائية الموحدة ودرجة الثقة
+
+jobs:
+  score:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: pip install pandas
+      - run: python add_final_scoring.py
+      - name: Commit result
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add data/final_report_scored.csv
+          git commit -m "Add final scoring" || echo "No changes"
+          for i in 1 2 3 4 5; do
+            git pull --rebase origin main && git push && break
+            sleep 5
+          done
