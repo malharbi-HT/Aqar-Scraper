@@ -94,13 +94,34 @@ def main():
     df["سبب_التوصية_النهائية"] = [v[1] for v in verdicts]
     df["درجة_الثقة"] = df.apply(compute_confidence, axis=1)
 
-    # نرتّب الأعمدة: التوصية والثقة أول (الأهم للقراءة)، والوصف الطويل آخر شي
-    priority_cols = ["listing_id", "التوصية_النهائية", "درجة_الثقة", "سبب_التوصية_النهائية",
-                     "url", "district", "price", "area_sqm", "rooms", "bathrooms",
-                     "yield_low_pct", "price_per_sqm", "ratio"]
-    priority_cols = [c for c in priority_cols if c in df.columns]
-    other_cols = [c for c in df.columns if c not in priority_cols and c != "description"]
-    final_order = priority_cols + other_cols + (["description"] if "description" in df.columns else [])
+    # ترتيب منطقي: كل مجموعة مترابطة مع بعض (التوصية، ثم الهوية، ثم مواصفات العقار،
+    # ثم الإيجار، ثم العائد، ثم مقارنة السعر، ثم تحليل الـ LLM، والوصف الطويل آخر شي)
+    ordered_cols = [
+        # 1) التوصية النهائية (الأهم -- أول شي يشوفه القارئ)
+        "التوصية_النهائية", "درجة_الثقة", "سبب_التوصية_النهائية",
+        # 2) هوية العقار
+        "listing_id", "url", "title", "district", "direction", "ضمن_الـ11_حي_التجريبية",
+        # 3) مواصفات العقار (كلها مع بعض)
+        "price", "area_sqm", "price_per_sqm", "rooms", "bathrooms", "livings",
+        "age_years", "مؤثثة", "رقم_التواصل",
+        # 4) الإيجار المتوقع (النطاق كامل متجاور)
+        "rent_low", "rent_mid", "rent_high",
+        # 5) العائد (النطاق كامل متجاور)
+        "yield_low_pct", "yield_mid_pct", "yield_high_pct",
+        "verdict_yield", "verdict_yield_reason",
+        # 6) مقارنة السعر بالصفقات الرسمية (كلها مع بعض)
+        "ad_price_per_sqm", "comparable_deals_count", "comparable_median_price_per_sqm",
+        "ratio", "verdict_price", "verdict_price_reason",
+        # 7) نقاط القوة والمخاطر
+        "strengths", "risks",
+        # 8) تحليل الـ LLM
+        "is_multi_unit", "unit_label", "llm_corrections", "llm_notes",
+        # 9) الوصف الطويل (آخر شي عشان ما يشتت باقي الأعمدة)
+        "description",
+    ]
+    final_order = [c for c in ordered_cols if c in df.columns]
+    # نضيف أي عمود إضافي ما ذكرناه (احتياطًا، عشان ما نفقد بيانات)
+    final_order += [c for c in df.columns if c not in final_order]
     df = df[final_order]
 
     # نرتّب الصفوف: الفرص القوية أول، وداخل كل فئة نرتّب بالعائد الأعلى
