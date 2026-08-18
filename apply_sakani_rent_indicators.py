@@ -8,6 +8,9 @@
 
 import pandas as pd
 import os
+from generate_investment_reports import (
+    FURNISHED_PATTERN, extract_strengths, extract_risks, extract_phone,
+)
 
 DATA_DIR = os.path.join(os.path.dirname(__file__), "data")
 SAKANI_PATH = os.path.join(DATA_DIR, "sakani_rent_indicators.csv")
@@ -100,18 +103,25 @@ def main():
         yield_pct = round(expected_rent / price * 100, 2)
         is_trusted = deals_count >= MIN_TRUSTED_DEALS
 
-        result_row = {
-            "listing_id": row.get("listing_id"),
-            "url": row.get("url"),
-            "district": row.get("district"),
-            "rooms": row.get("rooms"),
-            "price": price,
-            "area_sqm": area,
+        description = row.get("description")
+        is_furnished = bool(FURNISHED_PATTERN.search(str(description or "")))
+        strengths = extract_strengths(description)
+        risks = extract_risks(row.get("title"), description)
+        phone = extract_phone(description)
+
+        # نبدأ بكل أعمدة الصف الأصلي كاملة (كل تفاصيل العقار كما هي)، وبعدين
+        # نضيف/نستبدل أعمدة الإيجار والعائد والتحقق الخاصة بمصدر سكني
+        result_row = row.to_dict()
+        result_row.update({
+            "مؤثثة": "نعم" if is_furnished else "لا",
+            "رقم_التواصل": phone,
+            "strengths": " | ".join(strengths),
+            "risks": " | ".join(risks),
             "expected_annual_rent_sakani": round(expected_rent),
             "sakani_deals_count": int(deals_count),
             "sakani_trusted": is_trusted,
             "expected_yield_pct_sakani": yield_pct,
-        }
+        })
 
         # مقارنة سعر البيع بصفقات وزارة العدل الرسمية (لو الملف متوفر)
         if deals is not None:
@@ -143,7 +153,23 @@ def main():
 
         results.append(result_row)
 
-    result_df = pd.DataFrame(results).sort_values("expected_yield_pct_sakani", ascending=False)
+    result_df = pd.DataFrame(results)
+
+    # ترتيب منطقي: الأهم أول (العائد والتحقق)، ثم تفاصيل العقار، والوصف آخر شي
+    ordered_cols = [
+        "listing_id", "url", "title", "district", "direction",
+        "expected_yield_pct_sakani", "sakani_trusted", "sakani_deals_count",
+        "expected_annual_rent_sakani",
+        "price", "area_sqm", "rooms", "bathrooms", "livings", "age_years",
+        "مؤثثة", "رقم_التواصل",
+        "ad_price_per_sqm", "comparable_sale_deals_count", "comparable_median_price_per_sqm",
+        "price_ratio", "verdict_price",
+        "strengths", "risks",
+        "description",
+    ]
+    ordered_cols = [c for c in ordered_cols if c in result_df.columns]
+    ordered_cols += [c for c in result_df.columns if c not in ordered_cols]
+    result_df = result_df[ordered_cols].sort_values("expected_yield_pct_sakani", ascending=False)
     print(f"\nعدد العقارات اللي حسبنا لها عائد (حي وعدد غرف متوفرين بمؤشرات سكني): {len(result_df)}")
 
     trusted = result_df[result_df["sakani_trusted"]]
@@ -152,10 +178,10 @@ def main():
     print(f"\n--- توزيع العائد (بثقة عالية بس) ---")
     print(trusted["expected_yield_pct_sakani"].describe().to_string())
 
-    print(f"\n--- أفضل 15 فرصة (بثقة عالية) ---")
+    print(f"\n--- أفضل 30 فرصة (بثقة عالية) ---")
     cols = ["listing_id", "district", "rooms", "price", "expected_annual_rent_sakani",
             "sakani_deals_count", "expected_yield_pct_sakani"]
-    print(trusted[cols].head(15).to_string(index=False))
+    print(trusted[cols].head(30).to_string(index=False))
 
     result_df.to_csv(OUTPUT_PATH, index=False, encoding="utf-8-sig")
     print(f"\nتم الحفظ: {OUTPUT_PATH}")
