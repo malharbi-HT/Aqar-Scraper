@@ -1,0 +1,25 @@
+name: Apply Sakani Rent Indicators
+
+on:
+  workflow_dispatch:   # تشغيل يدوي فقط -- يحسب العائد من مؤشرات سكني (حسب الغرف) + يقارن بصفقات البيع الرسمية
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: pip install pandas
+      - run: python apply_sakani_rent_indicators.py
+      - name: Commit result
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add data/yield_from_sakani_indicators.csv
+          git commit -m "Apply Sakani rent indicators" || echo "No changes"
+          for i in 1 2 3 4 5; do
+            git pull --rebase origin main && git push && break
+            sleep 5
+          done
