@@ -21,7 +21,7 @@ OUTPUT_PATH = os.path.join(DATA_DIR, "manager_presentation_report.csv")
 API_URL = "https://api.anthropic.com/v1/messages"
 MODEL = "claude-haiku-4-5-20251001"
 
-YIELD_MIN, YIELD_MAX = 7.0, 9.0
+YIELD_MIN, YIELD_MAX = 5.5, 9.0
 TARGET_SAMPLE_SIZE = 20
 STRONG_COMPARISON_MIN_DEALS = 10
 
@@ -76,12 +76,15 @@ def parse_json_response(text):
     return json.loads(cleaned)
 
 
+MAX_AGE_YEARS = 10  # نستبعد العقارات الأقدم من هذا من العيّنة كليًا
+
 def pick_diverse_sample(df):
     """يختار عيّنة موزّعة بالتساوي على المناطق، من نطاق العائد المطلوب وثقة عالية"""
     pool = df[
         (df["expected_yield_pct_sakani"] >= YIELD_MIN)
         & (df["expected_yield_pct_sakani"] <= YIELD_MAX)
         & (df["sakani_trusted"] == True)
+        & (df["age_years"] <= MAX_AGE_YEARS)
     ].copy()
     print(f"عقارات بنطاق العائد {YIELD_MIN}-{YIELD_MAX}% وثقة عالية: {len(pool)}")
 
