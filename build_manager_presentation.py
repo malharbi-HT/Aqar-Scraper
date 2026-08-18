@@ -236,6 +236,7 @@ def main():
         "yield_pct", "expected_annual_rent", "sakani_deals_count",
         "ratio" if "ratio" in result_df.columns else "price_ratio",
         "verdict_price",
+        "ad_price_per_sqm", "comparable_sale_deals_count", "comparable_median_price_per_sqm",
         "verdict_price_reason" if "verdict_price_reason" in result_df.columns else None,
         "strengths", "risks",
         "is_multi_unit", "unit_label", "llm_corrections", "llm_notes",
