@@ -188,7 +188,8 @@ def main():
                     f"{field}={value} بالوصف (مسجّل عندنا {row.get(field)})"
                     for field, value in found_conflicts.items()
                 )
-                existing_risks = str(new_row.get("risks") or "").strip()
+                existing_risks_raw = new_row.get("risks")
+                existing_risks = "" if pd.isna(existing_risks_raw) else str(existing_risks_raw).strip()
                 new_row["risks"] = (existing_risks + " | " + conflict_text) if existing_risks else conflict_text
             output_rows.append(new_row)
 
