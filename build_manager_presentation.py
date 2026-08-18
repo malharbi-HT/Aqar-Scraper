@@ -205,7 +205,8 @@ def main():
                     f"{field}={value} بالوصف (مسجّل عندنا {row.get(field)})"
                     for field, value in found_conflicts.items()
                 )
-                existing_risks = str(new_row.get("risks") or "").strip()
+                existing_risks_raw = new_row.get("risks")
+                existing_risks = "" if pd.isna(existing_risks_raw) else str(existing_risks_raw).strip()
                 new_row["risks"] = (existing_risks + " | " + conflict_text) if existing_risks else conflict_text
 
             output_rows.append(new_row)
@@ -225,20 +226,31 @@ def main():
         "expected_annual_rent_sakani": "expected_annual_rent",
     })
 
+    # عمود نوع العقار -- كل شي عندنا حاليًا شقق (السحب مقصور على شقق-للبيع بس)
+    result_df["نوع_العقار"] = "شقة"
+
     final_cols = [
-        "listing_id", "url", "title", "district", "direction",
+        "listing_id", "url", "title", "district", "city", "direction",
         "التوصية_النهائية", "درجة_الثقة", "سبب_التوصية_النهائية",
-        "price", "area_sqm", "rooms", "bathrooms", "livings", "age_years", "مؤثثة",
+        "نوع_العقار", "price", "area_sqm", "rooms", "bathrooms", "livings", "age_years", "مؤثثة",
         "yield_pct", "expected_annual_rent", "sakani_deals_count",
         "ratio" if "ratio" in result_df.columns else "price_ratio",
         "verdict_price",
         "verdict_price_reason" if "verdict_price_reason" in result_df.columns else None,
         "strengths", "risks",
         "is_multi_unit", "unit_label", "llm_corrections", "llm_notes",
-        "description",
+        "description", "images",
     ]
     final_cols = [c for c in final_cols if c and c in result_df.columns]
-    remaining = [c for c in result_df.columns if c not in final_cols and c != "رقم_التواصل"]
+
+    # أعمدة نستبعدها كليًا (مو مفيدة بعرض المدير: بيانات تقنية/إدارية داخلية)
+    EXCLUDE_COLS = {
+        "images_count", "advertiser_name", "advertiser_company", "advertiser_type",
+        "created_at", "published_at", "last_update", "views", "date_scraped",
+        "published", "price_text", "price_was_missing", "price_per_sqm",
+        "anomaly_score", "is_anomaly", "رقم_التواصل",
+    }
+    remaining = [c for c in result_df.columns if c not in final_cols and c not in EXCLUDE_COLS]
     result_df = result_df[final_cols + remaining]
 
     rank = {"🟢 فرصة قوية": 0, "🟡 تحتاج مراجعة": 1, "⚪ غير مكتمل": 2, "🔴 لا ينصح بها": 3}
