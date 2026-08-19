@@ -29,7 +29,7 @@ PROMPT_TEMPLATE = """أنت محلل عقاري. حلّل وصف الإعلان 
 
 بيانات الإعلان المسجّلة عندنا:
 - المساحة: {area} م²
-- عدد الغرف: {rooms}
+- عدد الغرف: {rooms} (ملاحظة: هذا الرقم يشمل غرف النوم + المجلس/الصالة المنفصلة مجتمعين، لو مذكور مجلس منفصل بالوصف اعتبره ضمن عدد الغرف)
 - عدد الحمامات: {bathrooms}
 - عمر العقار: {age} سنة
 - السعر: {price} ريال
@@ -49,7 +49,7 @@ PROMPT_TEMPLATE = """أنت محلل عقاري. حلّل وصف الإعلان 
   ],
   "data_conflicts": {{
     "area_sqm": القيمة الصحيحة من الوصف أو null,
-    "rooms": نفس الشي, "bathrooms": نفس الشي, "age_years": نفس الشي
+    "rooms": نفس الشي (تذكّر: عدد الغرف = غرف النوم + المجلس/الصالة المنفصلة مجتمعين -- لا تعتبره تعارض لو فرق العدد يفسّره وجود مجلس منفصل بالوصف), "bathrooms": نفس الشي, "age_years": نفس الشي
   }},
   "notes": "ملاحظة مختصرة جدًا أو نص فارغ"
 }}
@@ -78,8 +78,23 @@ def parse_json_response(text):
 
 MAX_AGE_YEARS = 10  # نستبعد العقارات الأقدم من هذا من العيّنة كليًا
 
+DUPLEX_PATTERN = re.compile(r"دوبلكس|دبلوكس|فلا\s*دوبلكس|فلة\s*دوبلكس")
+FLOOR_PATTERN = re.compile(r"دور\s*(أول|ثاني|ثالث|رابع|اول|تاني|ارضي)")
+
+
+def is_actually_floor_unit(description):
+    """يكتشف لو العقار فعليًا 'دور' مستقل ضمن فلا دوبلكس، مو شقة حقيقية"""
+    text = str(description or "")
+    return bool(DUPLEX_PATTERN.search(text) and FLOOR_PATTERN.search(text))
+
+
 def pick_diverse_sample(df):
-    """يختار عيّنة موزّعة بالتساوي على المناطق، من نطاق العائد المطلوب وثقة عالية"""
+    """يختار عيّنة موزّعة بالتساوي على المناطق، من نطاق العائد المطلوب وثقة عالية،
+    بعد استبعاد أي عقار وصفه يوضح إنه فعليًا 'دور' مو شقة حقيقية"""
+    before_floor_filter = len(df)
+    df = df[~df["description"].apply(is_actually_floor_unit)].copy()
+    print(f"استبعدنا {before_floor_filter - len(df)} عقار وصفه يوضح إنه 'دور' مو شقة فعلية")
+
     pool = df[
         (df["expected_yield_pct_sakani"] >= YIELD_MIN)
         & (df["expected_yield_pct_sakani"] <= YIELD_MAX)
@@ -226,7 +241,7 @@ def main():
         "expected_annual_rent_sakani": "expected_annual_rent",
     })
 
-    # عمود نوع العقار -- كل شي عندنا حاليًا شقق (السحب مقصور على شقق-للبيع بس)
+    # عمود نوع العقار -- ثابت "شقة" لأن أي عقار "دور" استُبعد أصلاً وقت اختيار العينة
     result_df["نوع_العقار"] = "شقة"
 
     final_cols = [
