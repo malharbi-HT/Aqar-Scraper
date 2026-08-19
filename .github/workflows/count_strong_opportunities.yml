@@ -1,0 +1,15 @@
+name: Count Strong Opportunities
+
+on:
+  workflow_dispatch:   # تشغيل يدوي فقط -- يحسب عدد الفرص القوية الحالية بكل السوق
+
+jobs:
+  count:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: pip install pandas
+      - run: python count_strong_opportunities.py
