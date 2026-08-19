@@ -11,7 +11,7 @@ import os
 DATA_DIR = os.path.join(os.path.dirname(__file__), "data")
 INPUT_PATH = os.path.join(DATA_DIR, "yield_from_sakani_indicators.csv")
 
-STRONG_YIELD_THRESHOLD = 7.0
+STRONG_YIELD_THRESHOLD = 5.0
 
 
 def main():
