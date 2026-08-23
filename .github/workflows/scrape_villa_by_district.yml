@@ -1,0 +1,67 @@
+name: Scrape Villa By District (Dynamic Matrix)
+
+on:
+  workflow_dispatch:   # تشغيل يدوي -- يكتشف كل الأحياء أول، ثم يسحب كل حي بتشغيلة منفصلة بالتوازي
+
+jobs:
+  discover:
+    runs-on: ubuntu-latest
+    outputs:
+      districts: ${{ steps.get_districts.outputs.districts }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: pip install requests beautifulsoup4 lxml
+      - id: get_districts
+        run: |
+          RESULT=$(python discover_districts_for_type.py فلل-للبيع)
+          echo "districts=$RESULT" >> "$GITHUB_OUTPUT"
+
+  scrape:
+    needs: discover
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      max-parallel: 6   # أقصى 6 أحياء بنفس الوقت -- يحمي من الحظر المؤقت
+      matrix:
+        district: ${{ fromJson(needs.discover.outputs.districts) }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: pip install requests beautifulsoup4 lxml
+      - run: python scraper_villa.py "${{ matrix.district.url }}"
+      - name: Commit result
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add data/districts/listings_villa_*.csv
+          git commit -m "Scrape villa - ${{ matrix.district.name }}" || echo "No changes"
+          for i in 1 2 3 4 5; do
+            git pull --rebase origin main && git push && break
+            sleep 5
+          done
+
+  merge:
+    needs: scrape   # ينتظر كل تشغيلات الأحياء تخلص أول
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: pip install pandas
+      - run: python merge_district_files.py
+      - name: Commit merged result
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add data/listings_villa.csv
+          git commit -m "Merge villa district files" || echo "No changes"
+          for i in 1 2 3 4 5; do
+            git pull --rebase origin main && git push && break
+            sleep 5
+          done
