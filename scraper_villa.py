@@ -6,6 +6,7 @@
 - يحفظ النتائج بملف CSV، ويتجنب تكرار الإعلانات (dedupe حسب رقم الإعلان الفريد)
 """
 
+import sys
 import requests
 from bs4 import BeautifulSoup
 import json
@@ -29,6 +30,18 @@ LIST_PAGES = [
 ]
 MAX_PAGES_PER_CATEGORY = 200   # سقف أعلى من الحاجة الفعلية؛ السكربت يتوقف تلقائيًا عند آخر صفحة فعلية
 
+# لو مرّرنا اسم منطقة بسطر الأوامر (شمال/شرق/غرب/جنوب/وسط)، نقتصر عليها بس
+# -- يسمح بتشغيل كل منطقة بتشغيلة GitHub Actions منفصلة بالتوازي، يقلل وقت كل تشغيلة
+REGION_ARG_MAP = {
+    "north": "شمال-الرياض", "east": "شرق-الرياض", "west": "غرب-الرياض",
+    "south": "جنوب-الرياض", "center": "وسط-الرياض",
+}
+if len(sys.argv) > 1 and sys.argv[1] in REGION_ARG_MAP:
+    region_keyword = REGION_ARG_MAP[sys.argv[1]]
+    LIST_PAGES = [url for url in LIST_PAGES if region_keyword in url]
+    print(f"تشغيل مقتصر على منطقة: {sys.argv[1]} ({region_keyword})")
+
+
 # مسارات محظورة صراحة بـ robots.txt -- لازم نتجنبها دائمًا
 FORBIDDEN_PATH_PREFIXES = [
     "/contact-us", "/اتصل-بنا", "/معلومات-المعلن", "/contact_user",
@@ -48,6 +61,10 @@ HEADERS = {
 
 DATA_DIR = os.path.join(os.path.dirname(__file__), "data")
 OUTPUT_CSV = os.path.join(DATA_DIR, "listings_villa.csv")
+# لو تشغيل بمنطقة واحدة (عبر معامل سطر الأوامر)، نكتب لملف منفصل خاص بهالمنطقة
+# -- يتجنب تعارض Git لما عدة تشغيلات متوازية تكتب لنفس الملف بنفس الوقت
+if len(sys.argv) > 1 and sys.argv[1] in {"north", "east", "west", "south", "center"}:
+    OUTPUT_CSV = os.path.join(DATA_DIR, f"listings_villa_{sys.argv[1]}.csv")
 
 CSV_FIELDS = [
     "listing_id", "url", "title", "price", "area_sqm",
@@ -374,6 +391,31 @@ def open_csv_writer():
     return f, writer
 
 
+def discover_districts(direction_url):
+    """يجيب كل روابط الأحياء المذكورة بصفحة المنطقة -- نمسح كل حي لحاله بدل
+    المنطقة كاملة عشان نتجاوز حد عمق الترقيم بالموقع (Pagination Depth Limit)"""
+    try:
+        soup = get_soup(direction_url)
+    except Exception as e:
+        print(f"فشل جلب صفحة المنطقة {direction_url}: {e}")
+        return {}
+
+    districts = {}
+    for a in soup.select("a[href]"):
+        href = a["href"]
+        full = urljoin(BASE_URL, href)
+        if "/حي-" not in full and "حي" not in full:
+            continue
+        if not full.startswith(direction_url + "/"):
+            continue
+        tail = full[len(direction_url) + 1:]
+        if "/" in tail or re.search(r"-\d{4,}$", tail):
+            continue
+        districts[full] = a.get_text(strip=True)
+
+    return districts
+
+
 def main():
     existing_ids = load_existing_ids()
     print(f"عدد الإعلانات المحفوظة مسبقًا: {len(existing_ids)}")
@@ -381,20 +423,31 @@ def main():
     all_links = set()
     for base in LIST_PAGES:
         print(f"=== تصنيف: {base} ===")
-        for page_num in range(1, MAX_PAGES_PER_CATEGORY + 1):
-            page_url = base if page_num == 1 else f"{base}/{page_num}"
-            try:
-                links = collect_listing_links_from_list_page(page_url)
-            except requests.RequestException as e:
-                print(f"تخطي {page_url}: {e}")
-                continue
-            if not links:
-                print(f"وصلنا آخر صفحة عند صفحة {page_num - 1}، ننتقل للتصنيف التالي")
-                break  # وصلنا آخر صفحة متاحة لهذا التصنيف
+        districts = discover_districts(base)
+        print(f"لقينا {len(districts)} حي فرعي بهالمنطقة")
 
-            new_on_page = [l for l in links if extract_listing_id(l) not in existing_ids]
-            print(f"صفحة {page_num}: لقيت {len(links)} رابط ({len(new_on_page)} جديد، إجمالي حتى الآن: {len(all_links) + len(links)})")
-            all_links.update(links)
+        # لو ما لقينا أحياء (تغيّر بالموقع أو خلل مؤقت)، نرجع للمنطقة كاملة كخطة بديلة
+        targets = list(districts.keys()) if districts else [base]
+
+        for district_url in targets:
+            district_name = districts.get(district_url, district_url)
+            print(f"  --- حي: {district_name} ---")
+            for page_num in range(1, MAX_PAGES_PER_CATEGORY + 1):
+                page_url = district_url if page_num == 1 else f"{district_url}/{page_num}"
+                try:
+                    links = collect_listing_links_from_list_page(page_url)
+                except requests.RequestException as e:
+                    print(f"    تخطي {page_url}: {e}")
+                    continue
+                if not links:
+                    print(f"    وصلنا آخر صفحة عند صفحة {page_num - 1}")
+                    break
+
+                new_on_page = [l for l in links if extract_listing_id(l) not in existing_ids]
+                print(f"    صفحة {page_num}: لقيت {len(links)} رابط ({len(new_on_page)} جديد، إجمالي حتى الآن: {len(all_links) + len(links)})")
+                all_links.update(links)
+
+                time.sleep(2)  # احترام السيرفر
 
             time.sleep(2)  # احترام السيرفر
 
