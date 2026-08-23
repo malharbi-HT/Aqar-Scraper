@@ -431,10 +431,19 @@ def main():
     all_links = set()
     for base in LIST_PAGES:
         print(f"=== تصنيف: {base} ===")
-        districts = discover_districts(base)
-        print(f"لقينا {len(districts)} حي فرعي بهالمنطقة")
 
-        # لو ما لقينا أحياء (تغيّر بالموقع أو خلل مؤقت)، نرجع للمنطقة كاملة كخطة بديلة
+        # مهم جدًا: لو الرابط أصلاً حي محدد (فيه "/حي-" بالفعل)، ما نحاول نكتشف
+        # "أحياء فرعية" منه -- الحي أصلاً أدق مستوى تقسيم متاح. محاولة الاكتشاف
+        # بهالحالة تلتقط فلاتر الصفحة (سعر/غرف/عمر) بالغلط وتعتبرها "أحياء"،
+        # وتؤدي لتكرار سحب نفس البيانات عشرات المرات.
+        if "/حي-" in base or DISTRICT_URL_ARG:
+            districts = {}
+            print("رابط حي محدد أصلاً -- نتخطى خطوة اكتشاف الأحياء الفرعية")
+        else:
+            districts = discover_districts(base)
+            print(f"لقينا {len(districts)} حي فرعي بهالمنطقة")
+
+        # لو ما لقينا أحياء (تغيّر بالموقع أو خلل مؤقت، أو رابط حي أصلاً)، نستخدم الرابط نفسه مباشرة
         targets = list(districts.keys()) if districts else [base]
 
         for district_url in targets:
