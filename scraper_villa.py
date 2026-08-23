@@ -31,12 +31,17 @@ LIST_PAGES = [
 MAX_PAGES_PER_CATEGORY = 200   # سقف أعلى من الحاجة الفعلية؛ السكربت يتوقف تلقائيًا عند آخر صفحة فعلية
 
 # لو مرّرنا اسم منطقة بسطر الأوامر (شمال/شرق/غرب/جنوب/وسط)، نقتصر عليها بس
-# -- يسمح بتشغيل كل منطقة بتشغيلة GitHub Actions منفصلة بالتوازي، يقلل وقت كل تشغيلة
+# لو مرّرنا رابط حي كامل (يبدأ بـhttp)، نقتصر على هذا الحي بس (أدق تقسيم)
 REGION_ARG_MAP = {
     "north": "شمال-الرياض", "east": "شرق-الرياض", "west": "غرب-الرياض",
     "south": "جنوب-الرياض", "center": "وسط-الرياض",
 }
-if len(sys.argv) > 1 and sys.argv[1] in REGION_ARG_MAP:
+DISTRICT_URL_ARG = None
+if len(sys.argv) > 1 and sys.argv[1].startswith("http"):
+    DISTRICT_URL_ARG = sys.argv[1]
+    LIST_PAGES = [DISTRICT_URL_ARG]
+    print(f"تشغيل مقتصر على حي وحد: {DISTRICT_URL_ARG}")
+elif len(sys.argv) > 1 and sys.argv[1] in REGION_ARG_MAP:
     region_keyword = REGION_ARG_MAP[sys.argv[1]]
     LIST_PAGES = [url for url in LIST_PAGES if region_keyword in url]
     print(f"تشغيل مقتصر على منطقة: {sys.argv[1]} ({region_keyword})")
@@ -61,9 +66,12 @@ HEADERS = {
 
 DATA_DIR = os.path.join(os.path.dirname(__file__), "data")
 OUTPUT_CSV = os.path.join(DATA_DIR, "listings_villa.csv")
-# لو تشغيل بمنطقة واحدة (عبر معامل سطر الأوامر)، نكتب لملف منفصل خاص بهالمنطقة
+# لو تشغيل بمنطقة واحدة أو حي واحد (عبر معامل سطر الأوامر)، نكتب لملف منفصل
 # -- يتجنب تعارض Git لما عدة تشغيلات متوازية تكتب لنفس الملف بنفس الوقت
-if len(sys.argv) > 1 and sys.argv[1] in {"north", "east", "west", "south", "center"}:
+if DISTRICT_URL_ARG:
+    safe_name = re.sub(r"[^a-zA-Z0-9\u0600-\u06FF]+", "_", DISTRICT_URL_ARG.split("/")[-1])[:60]
+    OUTPUT_CSV = os.path.join(DATA_DIR, "districts", f"listings_villa_{safe_name}.csv")
+elif len(sys.argv) > 1 and sys.argv[1] in {"north", "east", "west", "south", "center"}:
     OUTPUT_CSV = os.path.join(DATA_DIR, f"listings_villa_{sys.argv[1]}.csv")
 
 CSV_FIELDS = [
@@ -369,7 +377,7 @@ def load_existing_ids():
 
 def append_rows(rows):
     """يُبقى للتوافق، لكن الحفظ الفعلي الآن تدريجي عبر append_row"""
-    os.makedirs(DATA_DIR, exist_ok=True)
+    os.makedirs(os.path.dirname(OUTPUT_CSV), exist_ok=True)
     file_exists = os.path.exists(OUTPUT_CSV)
     with open(OUTPUT_CSV, "a", newline="", encoding="utf-8-sig") as f:
         writer = csv.DictWriter(f, fieldnames=CSV_FIELDS)
@@ -381,7 +389,7 @@ def append_rows(rows):
 def open_csv_writer():
     """يفتح ملف CSV بوضع الإضافة، ويكتب العنوان لو الملف جديد.
     يرجع (file_handle, writer) — لازم تسكر الملف يدويًا بنهاية الاستخدام."""
-    os.makedirs(DATA_DIR, exist_ok=True)
+    os.makedirs(os.path.dirname(OUTPUT_CSV), exist_ok=True)
     file_exists = os.path.exists(OUTPUT_CSV)
     f = open(OUTPUT_CSV, "a", newline="", encoding="utf-8-sig")
     writer = csv.DictWriter(f, fieldnames=CSV_FIELDS)
