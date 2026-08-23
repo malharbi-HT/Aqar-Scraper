@@ -1,0 +1,30 @@
+name: Scrape Villa (Single Type)
+
+on:
+  workflow_dispatch:
+    inputs:
+      region:
+        description: 'منطقة محددة (north/east/west/south/center) -- سيبه فاضي لكل المناطق'
+        required: false
+        type: string
+
+jobs:
+  scrape:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: pip install requests beautifulsoup4 lxml
+      - run: python scraper_villa.py ${{ inputs.region }}
+      - name: Commit result
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add data/listings_villa*.csv
+          git commit -m "Scrape Villa listings" || echo "No changes"
+          for i in 1 2 3 4 5; do
+            git pull --rebase origin main && git push && break
+            sleep 5
+          done
