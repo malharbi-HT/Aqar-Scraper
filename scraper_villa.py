@@ -447,9 +447,9 @@ def main():
                 print(f"    صفحة {page_num}: لقيت {len(links)} رابط ({len(new_on_page)} جديد، إجمالي حتى الآن: {len(all_links) + len(links)})")
                 all_links.update(links)
 
-                time.sleep(2)  # احترام السيرفر
+                time.sleep(3)  # احترام السيرفر (زدناها من 2 إلى 3 بسبب حظر مؤقت)
 
-            time.sleep(2)  # احترام السيرفر
+            time.sleep(3)  # احترام السيرفر (زدناها من 2 إلى 3 بسبب حظر مؤقت)
 
     new_links = [l for l in all_links if extract_listing_id(l) not in existing_ids]
     print(f"روابط جديدة للسحب: {len(new_links)}")
@@ -468,7 +468,7 @@ def main():
                 print(f"تم ({saved_count}/{len(new_links)}):", row["listing_id"], row.get("title"))
             except requests.RequestException as e:
                 print(f"فشل سحب {link}: {e}")
-            time.sleep(2)  # احترام السيرفر بين الطلبات
+            time.sleep(3)  # احترام السيرفر (زدناها من 2 إلى 3 بسبب حظر مؤقت) بين الطلبات
     finally:
         f.close()
 
