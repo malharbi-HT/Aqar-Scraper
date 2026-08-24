@@ -59,8 +59,14 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add data/listings_villa.csv
-          git commit -m "Merge villa district files" || echo "No changes"
+          for f in data/listings_villa.csv data/listings_floor.csv data/listings_land.csv data/listings_building.csv data/listings_office.csv; do
+            if [ -f "$f" ]; then
+              git add "$f"
+            else
+              echo "تخطي $f -- غير موجود (النوع هذا ما اتسحب بعد بأسلوب الأحياء)"
+            fi
+          done
+          git commit -m "Merge district files" || echo "No changes"
           for i in 1 2 3 4 5; do
             git pull --rebase origin main && git push && break
             sleep 5
