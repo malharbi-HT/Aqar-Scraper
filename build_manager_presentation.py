@@ -21,15 +21,18 @@ OUTPUT_PATH = os.path.join(DATA_DIR, "manager_presentation_report.csv")
 API_URL = "https://api.anthropic.com/v1/messages"
 MODEL = "claude-haiku-4-5-20251001"
 
-YIELD_MIN, YIELD_MAX = 5.5, 9.0
-TARGET_SAMPLE_SIZE = 20
+YIELD_MIN, YIELD_MAX = 5.5, 15.0
+TARGET_SAMPLE_SIZE = 50
+MIN_STRONG_TARGET = 20   # أقل عدد "فرصة قوية" نضمنه بالعيّنة النهائية
+STRONG_BUFFER = 8        # هامش أمان إضافي -- بعض المرشحين ممكن ينزلون بعد فحص LLM
+                          # (لو الوصف فيه تعارض بيانات)، فنختار أكثر من 20 بالبداية
 STRONG_COMPARISON_MIN_DEALS = 10
 
 PROMPT_TEMPLATE = """أنت محلل عقاري. حلّل وصف الإعلان التالي واستخرج المعلومات بدقة.
 
 بيانات الإعلان المسجّلة عندنا:
 - المساحة: {area} م²
-- عدد الغرف: {rooms} (ملاحظة: هذا الرقم يشمل غرف النوم + المجلس/الصالة المنفصلة مجتمعين، لو مذكور مجلس منفصل بالوصف اعتبره ضمن عدد الغرف)
+- عدد الغرف: {rooms}
 - عدد الحمامات: {bathrooms}
 - عمر العقار: {age} سنة
 - السعر: {price} ريال
@@ -49,7 +52,7 @@ PROMPT_TEMPLATE = """أنت محلل عقاري. حلّل وصف الإعلان 
   ],
   "data_conflicts": {{
     "area_sqm": القيمة الصحيحة من الوصف أو null,
-    "rooms": نفس الشي (تذكّر: عدد الغرف = غرف النوم + المجلس/الصالة المنفصلة مجتمعين -- لا تعتبره تعارض لو فرق العدد يفسّره وجود مجلس منفصل بالوصف), "bathrooms": نفس الشي, "age_years": نفس الشي
+    "rooms": نفس الشي, "bathrooms": نفس الشي, "age_years": نفس الشي
   }},
   "notes": "ملاحظة مختصرة جدًا أو نص فارغ"
 }}
@@ -89,8 +92,8 @@ def is_actually_floor_unit(description):
 
 
 def pick_diverse_sample(df):
-    """يختار عيّنة موزّعة بالتساوي على المناطق، من نطاق العائد المطلوب وثقة عالية،
-    بعد استبعاد أي عقار وصفه يوضح إنه فعليًا 'دور' مو شقة حقيقية"""
+    """يختار عيّنة 50 عقار، تضمن MIN_STRONG_TARGET (20) على الأقل من الفرص
+    القوية المحتملة (سعر عادل + عائد >=7%)، والباقي متنوع من المناطق"""
     before_floor_filter = len(df)
     df = df[~df["description"].apply(is_actually_floor_unit)].copy()
     print(f"استبعدنا {before_floor_filter - len(df)} عقار وصفه يوضح إنه 'دور' مو شقة فعلية")
@@ -101,27 +104,47 @@ def pick_diverse_sample(df):
         & (df["sakani_trusted"] == True)
         & (df["age_years"] <= MAX_AGE_YEARS)
     ].copy()
-    print(f"عقارات بنطاق العائد {YIELD_MIN}-{YIELD_MAX}% وثقة عالية: {len(pool)}")
+    print(f"عقارات بنطاق العائد {YIELD_MIN}-{YIELD_MAX}% وثقة سكني موثوقة: {len(pool)}")
 
     if len(pool) == 0:
         return pool
 
-    directions = pool["direction"].dropna().unique()
-    per_direction = max(1, TARGET_SAMPLE_SIZE // max(len(directions), 1))
+    # مرشحين "فرصة قوية محتملة" -- سعر عادل رسميًا + عائد قوي (>=7%)
+    # نأخذ أكثر من MIN_STRONG_TARGET كهامش أمان (بعضهم ممكن ينزل بعد فحص LLM
+    # لو الوصف فيه تعارض بيانات لم نكتشفه بعد بهالمرحلة)
+    is_fair_price = pool["verdict_price"].astype(str).str.contains("عادل", na=False)
+    is_strong_yield = pool["expected_yield_pct_sakani"] >= 7.0
+    strong_pool = pool[is_fair_price & is_strong_yield].sort_values("expected_yield_pct_sakani", ascending=False)
 
-    sampled_parts = []
-    for d in directions:
-        part = pool[pool["direction"] == d].sort_values("expected_yield_pct_sakani", ascending=False).head(per_direction)
-        sampled_parts.append(part)
+    strong_take = min(len(strong_pool), MIN_STRONG_TARGET + STRONG_BUFFER)
+    strong_sample = strong_pool.head(strong_take)
+    print(f"مرشحين فرصة قوية محتملة (سعر عادل + عائد>=7%): {len(strong_pool)}، أخذنا {len(strong_sample)}")
 
-    sample = pd.concat(sampled_parts, ignore_index=True)
+    if len(strong_sample) < MIN_STRONG_TARGET:
+        print(f"⚠️ تحذير: بس {len(strong_sample)} مرشح قوي متوفر، أقل من الهدف {MIN_STRONG_TARGET}")
+
+    # الباقي (لحد 50) نوزّعه متنوع على المناطق من بقية العيّنة (مو الفرص القوية)
+    remaining_slots = TARGET_SAMPLE_SIZE - len(strong_sample)
+    rest_pool = pool[~pool["listing_id"].isin(strong_sample["listing_id"])]
+
+    diverse_parts = []
+    if remaining_slots > 0 and len(rest_pool) > 0:
+        directions = rest_pool["direction"].dropna().unique()
+        per_direction = max(1, remaining_slots // max(len(directions), 1))
+        for d in directions:
+            part = rest_pool[rest_pool["direction"] == d].sort_values("expected_yield_pct_sakani", ascending=False).head(per_direction)
+            diverse_parts.append(part)
+
+    diverse_sample = pd.concat(diverse_parts, ignore_index=True) if diverse_parts else pd.DataFrame()
+
+    sample = pd.concat([strong_sample, diverse_sample], ignore_index=True)
 
     if len(sample) < TARGET_SAMPLE_SIZE:
         remaining = pool[~pool["listing_id"].isin(sample["listing_id"])]
         extra = remaining.sort_values("expected_yield_pct_sakani", ascending=False).head(TARGET_SAMPLE_SIZE - len(sample))
         sample = pd.concat([sample, extra], ignore_index=True)
 
-    sample = sample.head(TARGET_SAMPLE_SIZE)
+    sample = sample.drop_duplicates(subset="listing_id").head(TARGET_SAMPLE_SIZE)
     print(f"العيّنة النهائية: {len(sample)} عقار، موزّعة على {sample['direction'].nunique()} مناطق")
     print(sample["direction"].value_counts().to_string())
     return sample
@@ -241,7 +264,7 @@ def main():
         "expected_annual_rent_sakani": "expected_annual_rent",
     })
 
-    # عمود نوع العقار -- ثابت "شقة" لأن أي عقار "دور" استُبعد أصلاً وقت اختيار العينة
+    # عمود نوع العقار -- كل شي عندنا حاليًا شقق (السحب مقصور على شقق-للبيع بس)
     result_df["نوع_العقار"] = "شقة"
 
     final_cols = [
@@ -251,7 +274,6 @@ def main():
         "yield_pct", "expected_annual_rent", "sakani_deals_count",
         "ratio" if "ratio" in result_df.columns else "price_ratio",
         "verdict_price",
-        "ad_price_per_sqm", "comparable_sale_deals_count", "comparable_median_price_per_sqm",
         "verdict_price_reason" if "verdict_price_reason" in result_df.columns else None,
         "strengths", "risks",
         "is_multi_unit", "unit_label", "llm_corrections", "llm_notes",
