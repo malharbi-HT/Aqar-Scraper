@@ -1,0 +1,57 @@
+name: Track Property Types Status
+
+on:
+  schedule:
+    - cron: '7 18 * * 6'   # كل سبت، 9:07 مساءً بتوقيت السعودية (نفس وقت تتبع الشقق الأسبوعي)
+  workflow_dispatch:         # + إمكانية تشغيل يدوي وقت الحاجة
+
+jobs:
+  crawl_active:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        property_type:
+          - { slug: فلل-للبيع, key: villa }
+          - { slug: دور-للبيع, key: floor }
+          - { slug: أراضي-للبيع, key: land }
+          - { slug: عمائر-للبيع, key: building }
+          - { slug: مكاتب-للبيع, key: office }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: pip install requests beautifulsoup4 lxml
+      - run: python crawl_active_ids_for_type.py "${{ matrix.property_type.slug }}" "${{ matrix.property_type.key }}"
+      - name: Commit result
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add data/active_ids_${{ matrix.property_type.key }}_today.csv
+          git commit -m "Crawl active ids - ${{ matrix.property_type.key }}" || echo "No changes"
+          for i in 1 2 3 4 5; do
+            git pull --rebase origin main && git push && break
+            sleep 5
+          done
+
+  track_status:
+    needs: crawl_active
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: pip install pandas
+      - run: python track_status_property_types.py
+      - name: Commit result
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add data/listings_*_status.csv
+          git commit -m "Track property types status" || echo "No changes"
+          for i in 1 2 3 4 5; do
+            git pull --rebase origin main && git push && break
+            sleep 5
+          done
