@@ -1,0 +1,58 @@
+name: Daily Property Types Pipeline
+
+on:
+  schedule:
+    - cron: '13 18 * * *'   # 9:13 مساءً بتوقيت السعودية (نفس وقت خط البيع)، يوميًا
+  workflow_dispatch:         # + إمكانية تشغيل يدوي وقت الحاجة
+
+jobs:
+  scrape:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      max-parallel: 5   # الخمسة أنواع بالتوازي بنفس الوقت (تحديث يومي سريع، مو باكفيل)
+      matrix:
+        property_type:
+          - { script: scraper_villa.py,    name: villa }
+          - { script: scraper_floor.py,    name: floor }
+          - { script: scraper_land.py,     name: land }
+          - { script: scraper_building.py, name: building }
+          - { script: scraper_office.py,   name: office }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: pip install requests beautifulsoup4 lxml
+      - run: python ${{ matrix.property_type.script }}
+      - name: Commit scraped data
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add data/listings_${{ matrix.property_type.name }}.csv
+          git commit -m "Daily scrape ${{ matrix.property_type.name }}" || echo "No changes"
+          for i in 1 2 3 4 5; do
+            git pull --rebase origin main && git push && break
+            sleep 5
+          done
+
+  clean:
+    needs: scrape   # ينتظر كل تشغيلات السحب الخمسة تخلص أول
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: pip install pandas
+      - run: python clean_property_types.py
+      - name: Commit cleaned data
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add data/listings_*_normal.csv data/listings_*_anomalies.csv
+          git commit -m "Clean property types data" || echo "No changes"
+          for i in 1 2 3 4 5; do
+            git pull --rebase origin main && git push && break
+            sleep 5
+          done
