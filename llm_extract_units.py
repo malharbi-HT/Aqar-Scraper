@@ -44,6 +44,7 @@ MULTI_UNIT_HINTS = [
 PROMPT_TEMPLATE = """أنت محلل عقاري. حلّل وصف الإعلان التالي واستخرج المعلومات بدقة.
 
 بيانات الإعلان المسجّلة عندنا:
+- الحي: {district}
 - المساحة: {area} م²
 - عدد الغرف: {rooms} (ملاحظة: هذا الرقم يشمل غرف النوم + المجلس/الصالة المنفصلة مجتمعين، لو مذكور مجلس منفصل بالوصف اعتبره ضمن عدد الغرف)
 - عدد الحمامات: {bathrooms}
@@ -69,6 +70,7 @@ PROMPT_TEMPLATE = """أنت محلل عقاري. حلّل وصف الإعلان 
     }}
   ],
   "data_conflicts": {{
+    "district": اسم الحي الصحيح من نص الوصف (بالضبط زي ما يذكره النص) أو null لو مطابق/غير مذكور -- هذا فحص مهم جدًا، تأكد منه بعناية حتى لو باقي الحقول مطابقة,
     "area_sqm": القيمة الصحيحة من الوصف أو null لو مطابقة/غير مذكورة,
     "rooms": نفس الشي (تذكّر: عدد الغرف = غرف النوم + المجلس/الصالة المنفصلة مجتمعين -- لا تعتبره تعارض لو فرق العدد يفسّره وجود مجلس منفصل بالوصف),
     "bathrooms": نفس الشي,
@@ -145,7 +147,7 @@ def main():
 
     for i, (_, row) in enumerate(df.iterrows(), start=1):
         prompt = PROMPT_TEMPLATE.format(
-            area=row.get("area_sqm"), rooms=row.get("rooms"),
+            district=row.get("district"), area=row.get("area_sqm"), rooms=row.get("rooms"),
             bathrooms=row.get("bathrooms"), age=row.get("age_years"),
             price=row.get("price"), description=str(row.get("description", ""))[:4000],
         )
