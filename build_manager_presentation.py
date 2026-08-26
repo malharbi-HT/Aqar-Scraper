@@ -31,6 +31,7 @@ STRONG_COMPARISON_MIN_DEALS = 10
 PROMPT_TEMPLATE = """أنت محلل عقاري. حلّل وصف الإعلان التالي واستخرج المعلومات بدقة.
 
 بيانات الإعلان المسجّلة عندنا:
+- نوع العقار المسجّل: شقة
 - الحي: {district}
 - المساحة: {area} م²
 - عدد الغرف: {rooms}
@@ -51,6 +52,7 @@ PROMPT_TEMPLATE = """أنت محلل عقاري. حلّل وصف الإعلان 
     {{"unit_label": "وصف مختصر للوحدة", "area_sqm": رقم أو null, "rooms": رقم أو null,
       "bathrooms": رقم أو null, "price": رقم أو null}}
   ],
+  "actual_property_type": صنّف نوع العقار الحقيقي من نص الوصف بدقة، اختر قيمة واحدة بالضبط من هذي القائمة: "شقة" أو "دور" أو "فيلا" أو "دوبلكس" أو "استوديو" أو "غير محدد" -- اعتمد على وصف العقار نفسه (مو عنوان الإعلان بس)، مثال: لو الوصف يقول "دور سكني للبيع" أو "الدور بالكامل" فالنوع "دور" حتى لو عنوان الإعلان يقول شقة,
   "data_conflicts": {{
     "district": اسم الحي الصحيح من نص الوصف (بالضبط زي ما يذكره النص) أو null لو مطابق/غير مذكور -- هذا فحص مهم جدًا، تأكد منه بعناية حتى لو باقي الحقول مطابقة,
     "area_sqm": القيمة الصحيحة من الوصف أو null,
@@ -165,16 +167,34 @@ def has_conflicts(value):
     return text not in ("", "{}", "nan", "None")
 
 
-def has_district_conflict(value):
-    """يكتشف تحديدًا لو التعارض يشمل الحي -- أخطر من باقي الحقول، لأنه يبطل
-    كل حسابات الإيجار والسعر المبنية على الحي المسجّل (احتُسبت قبل هالفحص)"""
+def has_severe_conflict(value):
+    """يكتشف تحديدًا لو التعارض يشمل الحي أو نوع العقار -- أخطر من باقي الحقول،
+    لأنه يبطل كل حسابات الإيجار والسعر المبنية على الحي/النوع المسجّل (احتُسبت
+    قبل هالفحص)"""
     if not has_conflicts(value):
         return False
     try:
         parsed = json.loads(value)
-        return "district" in parsed
+        return "district" in parsed or "actual_property_type" in parsed
     except (json.JSONDecodeError, TypeError):
         return False
+
+
+def severe_conflict_reason(value):
+    """يحدد أي نوع من التعارض الخطير موجود، لصياغة رسالة دقيقة"""
+    try:
+        parsed = json.loads(value)
+    except (json.JSONDecodeError, TypeError):
+        return None
+    has_district = "district" in parsed
+    has_type = "actual_property_type" in parsed
+    if has_district and has_type:
+        return "الوصف يذكر حي ونوع عقار مختلفين عن المسجّل"
+    if has_district:
+        return "الوصف يذكر حي مختلف عن المسجّل"
+    if has_type:
+        return f"الوصف يوضح إن نوع العقار الحقيقي '{parsed['actual_property_type']}' مختلف عن المفترض (شقة)"
+    return None
 
 
 def compute_confidence(row):
@@ -184,8 +204,8 @@ def compute_confidence(row):
     deals_count = row.get("comparable_sale_deals_count")
     if pd.notna(deals_count) and deals_count >= STRONG_COMPARISON_MIN_DEALS:
         signals += 1
-    if has_district_conflict(row.get("llm_corrections")):
-        signals -= 10  # تعارض الحي يُسقط الثقة لأدنى درجة دائمًا، بغض النظر عن باقي الإشارات
+    if has_severe_conflict(row.get("llm_corrections")):
+        signals -= 10  # تعارض الحي أو النوع يُسقط الثقة لأدنى درجة دائمًا
     elif has_conflicts(row.get("llm_corrections")):
         signals -= 1
     if signals >= 2:
@@ -199,8 +219,9 @@ def compute_final_verdict(row):
     verdict_price = str(row.get("verdict_price") or "")
     conflicts = has_conflicts(row.get("llm_corrections"))
 
-    if has_district_conflict(row.get("llm_corrections")):
-        return "🔴 لا ينصح بها", "الوصف يذكر حي مختلف عن المسجّل -- كل حسابات الإيجار والسعر اتبنت على الحي الخطأ، تحتاج مراجعة يدوية كاملة قبل أي قرار"
+    if has_severe_conflict(row.get("llm_corrections")):
+        reason = severe_conflict_reason(row.get("llm_corrections"))
+        return "🔴 لا ينصح بها", f"{reason} -- كل حسابات الإيجار والسعر غير موثوقة، تحتاج مراجعة يدوية كاملة قبل أي قرار"
     if "REVIEW" in verdict_price:
         return "🔴 لا ينصح بها", "سعر البيع أرخص بشكل غير طبيعي مقارنة بصفقات رسمية مشابهة -- تحقق من الصك والمساحة أولًا"
     if not verdict_price or verdict_price == "nan":
@@ -264,14 +285,25 @@ def main():
             new_row["llm_corrections"] = json.dumps(found_conflicts, ensure_ascii=False)
             new_row["llm_notes"] = result.get("notes", "")
 
+            # نوع العقار الحقيقي من تحليل الـ LLM -- يستبدل القيمة الثابتة "شقة"
+            actual_type = result.get("actual_property_type") or "شقة"
+            new_row["نوع_العقار"] = actual_type
+            type_mismatch = actual_type not in ("شقة", "غير محدد", None)
+            if type_mismatch:
+                type_conflict_text = f"نوع العقار الحقيقي '{actual_type}' مختلف عن المفترض 'شقة' -- كل حسابات الإيجار ومقارنة السعر اتبنت على افتراض شقة، غير موثوقة لهذا العقار"
+                found_conflicts["actual_property_type"] = actual_type
+
             if found_conflicts:
                 conflict_text = "تعارض بيانات اكتشفه التحليل الآلي: " + ", ".join(
                     f"{field}={value} بالوصف (مسجّل عندنا {row.get(field)})"
-                    for field, value in found_conflicts.items()
+                    for field, value in found_conflicts.items() if field != "actual_property_type"
                 )
+                if type_mismatch:
+                    conflict_text = (conflict_text + " | " + type_conflict_text) if conflict_text else type_conflict_text
                 existing_risks_raw = new_row.get("risks")
                 existing_risks = "" if pd.isna(existing_risks_raw) else str(existing_risks_raw).strip()
                 new_row["risks"] = (existing_risks + " | " + conflict_text) if existing_risks else conflict_text
+                new_row["llm_corrections"] = json.dumps(found_conflicts, ensure_ascii=False)
 
             output_rows.append(new_row)
 
@@ -290,8 +322,10 @@ def main():
         "expected_annual_rent_sakani": "expected_annual_rent",
     })
 
-    # عمود نوع العقار -- كل شي عندنا حاليًا شقق (السحب مقصور على شقق-للبيع بس)
-    result_df["نوع_العقار"] = "شقة"
+    # عمود نوع العقار -- يُحدَّد لكل صف من تحليل الـ LLM بالحلقة أعلاه (مو ثابت "شقة"
+    # بعد اليوم)، عمود احتياطي فقط لو صف ما مرّ على الحلقة لأي سبب
+    if "نوع_العقار" not in result_df.columns:
+        result_df["نوع_العقار"] = "شقة"
 
     final_cols = [
         "listing_id", "url", "title", "district", "city", "direction",
