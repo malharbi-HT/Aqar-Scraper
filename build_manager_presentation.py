@@ -31,6 +31,7 @@ STRONG_COMPARISON_MIN_DEALS = 10
 PROMPT_TEMPLATE = """أنت محلل عقاري. حلّل وصف الإعلان التالي واستخرج المعلومات بدقة.
 
 بيانات الإعلان المسجّلة عندنا:
+- الحي: {district}
 - المساحة: {area} م²
 - عدد الغرف: {rooms}
 - عدد الحمامات: {bathrooms}
@@ -51,6 +52,7 @@ PROMPT_TEMPLATE = """أنت محلل عقاري. حلّل وصف الإعلان 
       "bathrooms": رقم أو null, "price": رقم أو null}}
   ],
   "data_conflicts": {{
+    "district": اسم الحي الصحيح من نص الوصف (بالضبط زي ما يذكره النص) أو null لو مطابق/غير مذكور -- هذا فحص مهم جدًا، تأكد منه بعناية حتى لو باقي الحقول مطابقة,
     "area_sqm": القيمة الصحيحة من الوصف أو null,
     "rooms": نفس الشي, "bathrooms": نفس الشي, "age_years": نفس الشي
   }},
@@ -155,6 +157,18 @@ def has_conflicts(value):
     return text not in ("", "{}", "nan", "None")
 
 
+def has_district_conflict(value):
+    """يكتشف تحديدًا لو التعارض يشمل الحي -- أخطر من باقي الحقول، لأنه يبطل
+    كل حسابات الإيجار والسعر المبنية على الحي المسجّل (احتُسبت قبل هالفحص)"""
+    if not has_conflicts(value):
+        return False
+    try:
+        parsed = json.loads(value)
+        return "district" in parsed
+    except (json.JSONDecodeError, TypeError):
+        return False
+
+
 def compute_confidence(row):
     signals = 0
     if row.get("sakani_trusted") is True:
@@ -162,7 +176,9 @@ def compute_confidence(row):
     deals_count = row.get("comparable_sale_deals_count")
     if pd.notna(deals_count) and deals_count >= STRONG_COMPARISON_MIN_DEALS:
         signals += 1
-    if has_conflicts(row.get("llm_corrections")):
+    if has_district_conflict(row.get("llm_corrections")):
+        signals -= 10  # تعارض الحي يُسقط الثقة لأدنى درجة دائمًا، بغض النظر عن باقي الإشارات
+    elif has_conflicts(row.get("llm_corrections")):
         signals -= 1
     if signals >= 2:
         return "عالية"
@@ -175,6 +191,8 @@ def compute_final_verdict(row):
     verdict_price = str(row.get("verdict_price") or "")
     conflicts = has_conflicts(row.get("llm_corrections"))
 
+    if has_district_conflict(row.get("llm_corrections")):
+        return "🔴 لا ينصح بها", "الوصف يذكر حي مختلف عن المسجّل -- كل حسابات الإيجار والسعر اتبنت على الحي الخطأ، تحتاج مراجعة يدوية كاملة قبل أي قرار"
     if "REVIEW" in verdict_price:
         return "🔴 لا ينصح بها", "سعر البيع أرخص بشكل غير طبيعي مقارنة بصفقات رسمية مشابهة -- تحقق من الصك والمساحة أولًا"
     if not verdict_price or verdict_price == "nan":
@@ -206,7 +224,7 @@ def main():
     output_rows = []
     for i, (_, row) in enumerate(sample.iterrows(), start=1):
         prompt = PROMPT_TEMPLATE.format(
-            area=row.get("area_sqm"), rooms=row.get("rooms"),
+            district=row.get("district"), area=row.get("area_sqm"), rooms=row.get("rooms"),
             bathrooms=row.get("bathrooms"), age=row.get("age_years"),
             price=row.get("price"), description=str(row.get("description", ""))[:4000],
         )
