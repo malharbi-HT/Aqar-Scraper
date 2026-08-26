@@ -84,13 +84,21 @@ def parse_json_response(text):
 MAX_AGE_YEARS = 10  # نستبعد العقارات الأقدم من هذا من العيّنة كليًا
 
 DUPLEX_PATTERN = re.compile(r"دوبلكس|دبلوكس|فلا\s*دوبلكس|فلة\s*دوبلكس")
-FLOOR_PATTERN = re.compile(r"دور\s*(أول|ثاني|ثالث|رابع|اول|تاني|ارضي)")
+# نتقبّل "ال" التعريف اختياريًا قبل "دور" وقبل الرقم الترتيبي (الوصف غالبًا
+# يقول "الدور الثاني"، مو "دور ثاني")
+FLOOR_PATTERN = re.compile(r"(ال)?دور\s*(ال)?(أول|ثاني|ثالث|رابع|اول|تاني|ارضي)")
+# إعلان صريح لنوع العقار نفسه كـ"دور" (زي "دور سكني للبيع") -- إشارة قوية
+# لحالها، تميّز حالة "العقار نفسه دور" عن حالة "شقة عادية بالدور الثاني"
+EXPLICIT_FLOOR_TYPE = re.compile(r"دور\s+سكني")
 
 
 def is_actually_floor_unit(description):
-    """يكتشف لو العقار فعليًا 'دور' مستقل ضمن فلا دوبلكس، مو شقة حقيقية"""
+    """يكتشف لو العقار فعليًا 'دور' مستقل، مو شقة حقيقية -- إما دور ضمن فلا
+    دوبلكس، أو معلَن صراحة كـ'دور سكني' بالوصف"""
     text = str(description or "")
-    return bool(DUPLEX_PATTERN.search(text) and FLOOR_PATTERN.search(text))
+    is_duplex_floor = bool(DUPLEX_PATTERN.search(text) and FLOOR_PATTERN.search(text))
+    is_explicit_floor = bool(EXPLICIT_FLOOR_TYPE.search(text))
+    return is_duplex_floor or is_explicit_floor
 
 
 def pick_diverse_sample(df):
