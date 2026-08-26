@@ -22,13 +22,12 @@ YIELD_ACCEPTABLE_THRESHOLD = 5.0  # الحد المطلوب حاليًا (بدل
 
 # ⚠️ عدّل هذي القائمة بأي عقارات تبي تختبرها
 PROPERTIES = [
-    {"title": "فرصة الافاق",            "district": "حي العارض",  "price": 1282500.00, "area_sqm": 96,  "rooms": 3},
-    {"title": "فرصة رواح الملقا",        "district": "حي الملقا",  "price": 1341000.00, "area_sqm": 90,  "rooms": 3},
-    {"title": "فرصة حصتك العقارية",      "district": "حي العارض",  "price": 1108800.00, "area_sqm": 120, "rooms": 3},
-    {"title": "فرصة النرجس",             "district": "حي النرجس",  "price": 1404000.00, "area_sqm": 120, "rooms": 3},
+    {"title": "فرصة الافاق",            "district": "حي العارض",  "price": 1180000.00, "area_sqm": 96,  "rooms": 3},
+    {"title": "فرصة رواح الملقا",        "district": "حي الملقا",  "price": 1222000.00, "area_sqm": 90,  "rooms": 3},
+    {"title": "فرصة حصتك العقارية",      "district": "حي العارض",  "price": 1000000.00, "area_sqm": 120, "rooms": 3},
+    {"title": "فرصة النرجس",             "district": "حي النرجس",  "price": 1239000.00, "area_sqm": 120, "rooms": 3},
 ]
-
-
+ 
 def get_expected_rent(sakani, district, rooms):
     district_bare = district.replace("حي ", "").strip()
     match = sakani[sakani["الحي"] == district_bare]
