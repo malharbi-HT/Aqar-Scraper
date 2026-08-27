@@ -9,6 +9,17 @@
 خطوتين:
 1. فلترة أولية رخيصة (Regex) -- تلقط بس الإعلانات اللي تذكر كلمات التأجير
 2. Claude يحلل كل مرشّح بدقة -- يتأكد فعلاً مؤجرة، ويستخرج الإيجار السنوي الدقيق
+
+────────────────────────────────────────────────────────────────
+إطار الاستثمار (حصتك):
+شركة سعودية لتمكين الأفراد من الاستثمار بالعقارات المدرة للدخل عبر التملك
+الجزئي. فترة التخارج المستهدفة: 3-5 سنوات. الحد الأدنى للعائد السنوي
+المستهدف: 5%.
+
+⚠️ ملاحظة: رغدان (منصة إعلانات وسطاء، مو مصدر رسمي) غير مدمجة بهالسكربت --
+التصنيف هنا مبني على العائد الفعلي المستخرج من نص الإعلان نفسه (أقوى مصدر
+متوفر عندنا، أدق حتى من مؤشرات سكني الإحصائية العامة).
+────────────────────────────────────────────────────────────────
 """
 
 import pandas as pd
@@ -95,6 +106,22 @@ def parse_json_response(text):
     return json.loads(cleaned)
 
 
+# حد العائد المستهدف حسب نموذج استثمار حصتك
+HISSATECH_MIN_YIELD = 5.0
+
+
+def classify_hissatech(yield_pct, has_reliable_number):
+    """يصنّف العقار حسب معايير حصتك: Proceed / Review / Reject"""
+    if not has_reliable_number or yield_pct is None:
+        return "Review", "بيانات ناقصة -- ما فيه رقم إيجار موثوق كافٍ للتقييم"
+    if yield_pct >= HISSATECH_MIN_YIELD:
+        return "Proceed", f"العائد الفعلي {yield_pct}% يحقق أو يتجاوز الحد المستهدف (≥{HISSATECH_MIN_YIELD}%)"
+    elif yield_pct >= HISSATECH_MIN_YIELD - 1.5:
+        return "Review", f"العائد الفعلي {yield_pct}% قريب من الحد المستهدف ({HISSATECH_MIN_YIELD}%)، يستاهل مراجعة إضافية (نمو رأسمالي محتمل، موقع...)"
+    else:
+        return "Reject", f"العائد الفعلي {yield_pct}% أقل بوضوح من الحد المستهدف (≥{HISSATECH_MIN_YIELD}%)"
+
+
 def main():
     api_key = os.environ.get("ANTHROPIC_API_KEY")
     if not api_key:
@@ -165,6 +192,9 @@ def main():
         else:
             confidence = result.get("confidence")
 
+        has_reliable_number = annual_rent is not None
+        verdict, verdict_reason = classify_hissatech(yield_pct, has_reliable_number)
+
         results.append({
             "listing_id": row.get("listing_id"),
             "url": row.get("url"),
@@ -178,6 +208,8 @@ def main():
             "age_years": row.get("age_years"),
             "actual_annual_rent": annual_rent,
             "yield_pct_actual": yield_pct,
+            "verdict_hissatech": verdict,
+            "verdict_reason": verdict_reason,
             "lease_confidence": confidence,
             "lease_details": result.get("lease_details"),
             "key_features": result.get("key_features"),
@@ -212,6 +244,9 @@ def main():
     print(f"\nعقارات مؤجرة فعليًا (مؤكدة): {len(result_df)}")
     print(f"منها برقم إيجار صريح مذكور: {with_rent}")
     print(f"أرقام رُفضت (غير منطقية، يحتمل خلط بسعر البيع): {discarded_implausible}")
+    if len(result_df):
+        print(f"\n--- توزيع تصنيف حصتك (حد العائد ≥{HISSATECH_MIN_YIELD}%) ---")
+        print(result_df["verdict_hissatech"].value_counts().to_string())
 
     result_df.to_csv(OUTPUT_PATH, index=False, encoding="utf-8-sig")
     print(f"تم الحفظ: {OUTPUT_PATH}")
