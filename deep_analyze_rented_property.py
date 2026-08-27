@@ -51,26 +51,28 @@ def fetch_raghdan_district_data(district, city="الرياض"):
     except Exception as e:
         return None, f"فشل سحب رغدان: {e}", url
 
-    meta_match = re.search(r'<meta[^>]+(?:property="og:description"|name="description")[^>]+content="([^"]+)"', html)
+    # نستهدف og:description أول (الصيغة الطويلة، فيها عدد الصفقات والنمو
+    # صراحة) -- لو ما لقيناها، نرجع لأي meta description ثانية كخطة بديلة
+    og_match = re.search(r'<meta[^>]+property="og:description"[^>]+content="([^"]+)"', html)
+    generic_match = re.search(r'<meta[^>]+name="description"[^>]+content="([^"]+)"', html)
+    meta_match = og_match or generic_match
     if not meta_match:
         return None, "ما لقينا بيانات رغدان بصيغة متوقعة لهالحي", url
 
     summary = meta_match.group(1)
     price_match = re.search(r"([\d,]+)\s*SAR/m", summary)
-    trans_match = re.search(r"transactions:\s*([\d,]+)", summary, re.IGNORECASE)
+    # نتقبل الصيغتين: "transactions: 10,525" (طويلة) أو "10,525 transactions" (قصيرة)
+    trans_match = (
+        re.search(r"transactions:\s*([\d,]+)", summary, re.IGNORECASE)
+        or re.search(r"([\d,]+)\s*transactions", summary, re.IGNORECASE)
+    )
     growth_match = re.search(r"growth:\s*([+-]?[\d.]+)%", summary, re.IGNORECASE)
 
     if not price_match:
         return None, "ما قدرنا نستخرج سعر المتر من صفحة رغدان", url
 
-    range_match = re.search(r"Common Trading Range[\s\S]{0,200}?([\d,]+)\s*[--]\s*([\d,]+)", html)
-    range_low = float(range_match.group(1).replace(",", "")) if range_match else None
-    range_high = float(range_match.group(2).replace(",", "")) if range_match else None
-
     return {
         "avg_price_per_sqm": float(price_match.group(1).replace(",", "")),
-        "range_low": range_low,
-        "range_high": range_high,
         "transactions": int(trans_match.group(1).replace(",", "")) if trans_match else None,
         "yoy_growth_pct": float(growth_match.group(1)) if growth_match else None,
         "url": url,
@@ -101,33 +103,23 @@ def find_rent_reference(sakani_df, district, rooms):
 
 
 def compute_price_assessment(property_price_per_sqm, raghdan_data):
-    """يحسب تقييم السعر برمجيًا (مو بالـ LLM) -- يقارن بالنطاق الشائع كامل،
-    مو بس المتوسط، تفاديًا لخطأ الحكم اللي صار سابقًا بالتحليل اليدوي"""
+    """يحسب تقييم السعر برمجيًا (مو بالـ LLM) -- مقارنة بمتوسط سعر متر الحي
+    من رغدان (نفس مصدر وزارة العدل)، بحدود نسبة واضحة وثابتة"""
     if raghdan_data is None:
         return {"assessment": "غير متوفر", "price_vs_avg_pct": None, "target_purchase_price_per_sqm": None}
 
     avg = raghdan_data["avg_price_per_sqm"]
-    low, high = raghdan_data["range_low"], raghdan_data["range_high"]
     price_vs_avg_pct = round((property_price_per_sqm / avg - 1) * 100, 1)
 
-    if low is not None and high is not None:
-        if low <= property_price_per_sqm <= high:
-            assessment = "ضمن النطاق الطبيعي"
-            target_per_sqm = property_price_per_sqm
-        elif property_price_per_sqm > high:
-            over_pct = round((property_price_per_sqm / high - 1) * 100, 1)
-            assessment = f"أعلى من النطاق الطبيعي بـ{over_pct}%"
-            target_per_sqm = high
-        else:
-            assessment = "أقل من النطاق الطبيعي (تحقق من السبب)"
-            target_per_sqm = property_price_per_sqm
+    if price_vs_avg_pct <= 10:
+        assessment = f"سعر عادل (قريب من متوسط الحي، {price_vs_avg_pct:+.1f}%)"
+        target_per_sqm = property_price_per_sqm  # ما يحتاج تفاوض
+    elif price_vs_avg_pct <= 25:
+        assessment = f"أعلى من متوسط الحي بشكل ملحوظ ({price_vs_avg_pct:+.1f}%)"
+        target_per_sqm = avg * 1.10  # نفاوض لحد 10% فوق المتوسط بس
     else:
-        if price_vs_avg_pct <= 15:
-            assessment = f"قريب من متوسط الحي ({price_vs_avg_pct:+.1f}%) -- النطاق الكامل غير متوفر"
-            target_per_sqm = property_price_per_sqm
-        else:
-            assessment = f"أعلى من متوسط الحي بـ{price_vs_avg_pct:+.1f}% -- النطاق الكامل غير متوفر، تحفّظ بالحكم"
-            target_per_sqm = avg
+        assessment = f"مرتفع بشكل واضح عن متوسط الحي ({price_vs_avg_pct:+.1f}%)"
+        target_per_sqm = avg  # نفاوض للمتوسط نفسه
 
     return {"assessment": assessment, "price_vs_avg_pct": price_vs_avg_pct, "target_purchase_price_per_sqm": target_per_sqm}
 
@@ -204,7 +196,7 @@ def main():
 
     if "yield_pct_actual" in candidates.columns:
         candidates = candidates.sort_values("yield_pct_actual", ascending=False)
-    candidates = candidates.head(10)
+    candidates = candidates.head(1)
     print(f"العشرة الأفضل المختارة للتحليل العميق: {len(candidates)}")
 
     if len(candidates) == 0:
@@ -262,8 +254,6 @@ def main():
             "area_sqm": area,
             "price_per_sqm": property_price_per_sqm,
             "raghdan_avg_price_per_sqm": raghdan_data["avg_price_per_sqm"] if raghdan_data else None,
-            "raghdan_range_low": raghdan_data["range_low"] if raghdan_data else None,
-            "raghdan_range_high": raghdan_data["range_high"] if raghdan_data else None,
             "raghdan_transactions": raghdan_data["transactions"] if raghdan_data else None,
             "raghdan_yoy_growth_pct": raghdan_data["yoy_growth_pct"] if raghdan_data else None,
             "price_assessment": price_calc["assessment"],
