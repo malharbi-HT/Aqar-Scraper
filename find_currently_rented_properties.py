@@ -65,9 +65,35 @@ PROMPT_TEMPLATE = """أنت محلل عقاري دقيق جدًا. حلّل وص
 - استخرج الرقم بس لو مذكور صراحة كـ"إيجار سنوي" أو "أجرة سنوية" مرتبط
   بعقد إيجار قائم فعليًا، بصيغة واضحة لا لبس فيها
 
+⚠️ قاعدة مهمة عن الدفعات المتعددة (خطأ شائع جدًا يجب تفاديه):
+- القاعدة العامة: أي مبلغ مذكور مع صيغة دفع متكررة -- "على دفعتين"، "دفعتين
+  بالسنة"، "الدفع كل 6 أشهر"، "يُدفع كل نصف سنة"، أو أي صيغة مشابهة -- فهذا
+  المبلغ المذكور هو **الإيجار السنوي الكامل بالفعل** (يُدفع على أقساط
+  بالتردد المذكور)، **مو مبلغ كل قسط لحاله** -- لا تضاعف الرقم إطلاقًا
+- مثال 1: "80,000 ريال على دفعتين" يعني annual_rent = 80000 (مو 160000)
+- مثال 2: "مؤجرة بـ36,000 ريال، الدفع كل 6 أشهر" يعني annual_rent = 36000
+  (مو 72000) -- الـ36,000 هو الإجمالي السنوي، يُدفع على قسطين بالسنة
+- **الاستثناء الوحيد**: لو الوصف يذكر صراحة وبوضوح تام مبلغ "الدفعة الواحدة"
+  أو "كل دفعة" بالتحديد (زي "18,000 الدفعة الواحدة، على دفعتين بالسنة")،
+  وقتها بس اضرب مبلغ الدفعة الواحدة × عدد الدفعات للوصول للإجمالي السنوي
+- لو فيه أي غموض أو احتمال تفسيرين، اعتمد دائمًا إن المبلغ المذكور هو
+  **الإجمالي السنوي**، مو مبلغ القسط
+
 المطلوب الثاني -- المميزات والتفاصيل:
 استخرج أهم المميزات المذكورة (مصعد، موقف سيارة، مسبح، نادي، حديقة، أمن...)،
 وحدد بوضوح هل فيه مطبخ مذكور (راكب أو مجهز)، وهل الوحدة مؤثثة بالكامل أو جزئيًا.
+
+المطلوب الثالث -- نوع الإيجار والملكية:
+- هل الإيجار المذكور "شهري" (يتجدد شهريًا، مو عقد سنوي)؟ فرّق بين إيجار شهري
+  حقيقي وبين "دفعة شهرية" ضمن عقد سنوي (اللي هو إيجار سنوي فعليًا بس مقسّم
+  أقساط شهرية للسداد)
+- هل العقار "مقسّم" أو "مفرز" أو له "صك مشترك" مع وحدات ثانية (مو صك مستقل
+  لوحدة واحدة بالكامل)؟ دور أو شقة "مفرزة من فيلا" أو "بصك مشترك" تدخل هنا
+
+المطلوب الرابع -- مدة العقد المتبقية:
+هل مذكور بالوصف إن العقد الحالي **متبقي منه سنة كاملة أو أكثر** (أو "عقد
+لمدة سنتين"، "ينتهي بعد سنة"، "عقد طويل المدى"...)؟ لو مذكور صراحة إن
+المتبقي أقل من سنة (زي "ينتهي بعد 3 أشهر")، أو غير مذكور إطلاقًا، ضع false.
 
 نص الوصف:
 \"\"\"
@@ -78,12 +104,15 @@ PROMPT_TEMPLATE = """أنت محلل عقاري دقيق جدًا. حلّل وص
 
 {{
   "is_currently_rented": true أو false,
-  "annual_rent": الرقم المذكور بالضبط كإيجار سنوي حقيقي أو null (راجع التحذير أعلاه بعناية),
+  "annual_rent": الرقم المذكور بالضبط كإيجار سنوي حقيقي أو null (راجع التحذير أعلاه بعناية، وقاعدة الدفعات المتعددة),
   "lease_details": "جملة مختصرة عن تفاصيل العقد لو مذكورة، أو نص فارغ",
   "confidence": "عالية" أو "متوسطة" أو "لا يوجد رقم" -- استخدم "لا يوجد رقم" دائمًا لو annual_rent = null، "عالية" فقط لو الرقم صريح جدًا ومنطقي, "متوسطة" لو فيه غموض بسيط,
   "key_features": "قائمة مختصرة بأهم المميزات المذكورة، مفصولة بـ | (مثال: مصعد | موقف سيارة | مسبح)، أو نص فارغ لو ما فيه شي بارز",
   "has_kitchen": true أو false -- هل مذكور مطبخ (راكب/مجهز/عادي) بالوصف,
-  "is_furnished": true أو false -- هل الوحدة مؤثثة (كليًا أو جزئيًا) حسب الوصف
+  "is_furnished": true أو false -- هل الوحدة مؤثثة (كليًا أو جزئيًا) حسب الوصف,
+  "is_monthly_rental": true أو false -- هل هذا إيجار شهري متجدد (مو عقد سنوي)، حسب المطلوب الثالث أعلاه,
+  "is_shared_deed": true أو false -- هل العقار مقسّم/مفرز/بصك مشترك، حسب المطلوب الثالث أعلاه,
+  "is_long_term_lease": true أو false -- هل المتبقي من العقد سنة كاملة أو أكثر، حسب المطلوب الرابع أعلاه
 }}"""
 
 
@@ -166,6 +195,29 @@ def main():
             continue
 
         annual_rent = result.get("annual_rent")
+        description_text = str(row.get("description", ""))
+
+        # فحص Regex مستقل عن الـ LLM بالكامل -- يبحث مباشرة بالوصف عن نمط
+        # "رقم + دفعتين/كل 6 أشهر"، ويقارنه بنتيجة الـ LLM. لو الـ LLM ضاعف
+        # الرقم (خطأ شائع رغم التعليمات)، نصححه هنا برمجيًا بثقة كاملة --
+        # هذا الفحص لا يعتمد على التزام الـ LLM بالتعليمات إطلاقًا
+        installment_pattern = re.search(
+            r"([\d,]+)\s*(?:ريال|ألف|الف)?\s*(?:على\s*)?(?:دفعتين|كل\s*6\s*(?:أشهر|شهور)|نصف\s*سنوي)",
+            description_text
+        )
+        if installment_pattern:
+            stated_amount = float(installment_pattern.group(1).replace(",", ""))
+            # لو المبلغ المذكور صغير (زي "36" بدل "36000")، يحتمل يقصد بالآلاف
+            if stated_amount < 1000 and "ألف" in description_text[max(0, installment_pattern.start()-15):installment_pattern.end()]:
+                stated_amount *= 1000
+
+            if annual_rent is not None and abs(annual_rent - stated_amount * 2) / stated_amount < 0.05:
+                # الـ LLM ضاعف المبلغ فعليًا -- نصححه للمبلغ الصحيح
+                print(f"  ⚠️ تصحيح مضاعفة تلقائي: كان {annual_rent}, صار {stated_amount} (من نمط '{installment_pattern.group(0)}')")
+                annual_rent = stated_amount
+            elif annual_rent is None:
+                # الـ LLM ما استخرج شي، بس لقينا نمط واضح بالوصف -- نستخدمه مباشرة
+                annual_rent = stated_amount
 
         # فحص مباشر إضافي: نتأكد الرقم المستخرج مو نفس سعر البيع (أو قريب
         # منه جدًا) بغض النظر عن العائد -- طبقة حماية ثانية مستقلة عن حساب
@@ -215,6 +267,9 @@ def main():
             "key_features": result.get("key_features"),
             "has_kitchen": result.get("has_kitchen"),
             "is_furnished": result.get("is_furnished"),
+            "is_monthly_rental": result.get("is_monthly_rental"),
+            "is_shared_deed": result.get("is_shared_deed"),
+            "is_long_term_lease": result.get("is_long_term_lease"),
             "description": row.get("description"),
         })
 
@@ -224,20 +279,44 @@ def main():
 
     result_df = pd.DataFrame(results)
     if len(result_df):
-        # ترتيب بأولوية: عقارات برقم إيجار موثوق أول (بالعائد تنازليًا)، وبعدها
-        # الحالات الناقصة/المرفوضة بآخر الترتيب مع تعليم واضح "تحتاج مراجعة"
+        # ترتيب بأولوية بخمس مستويات:
+        # 0) رقم موثوق + صك مستقل + سنوي + عقد طويل المدى (سنة+ متبقية) -- الأفضل مطلقًا
+        # 1) رقم موثوق + صك مستقل + سنوي (بدون تأكيد مدة العقد الطويلة)
+        # 2) شهري أو مقسّم/صك مشترك، لكن برقم إيجار موثوق -- يستاهل مراجعة
+        # 3) بدون رقم إيجار موثوق أصلاً
+        # 4) شهري أو مقسّم وبدون رقم موثوق مع بعض -- أسوأ حالة، آخر الترتيب
         def sort_priority(row):
-            if pd.notna(row["yield_pct_actual"]):
-                return 0  # رقم موثوق -- أولوية أولى
-            return 1  # بدون رقم أو مرفوض -- آخر الترتيب
+            has_number = pd.notna(row["yield_pct_actual"])
+            is_flagged = bool(row.get("is_monthly_rental")) or bool(row.get("is_shared_deed"))
+            is_long_term = bool(row.get("is_long_term_lease"))
+            if has_number and not is_flagged and is_long_term:
+                return 0
+            if has_number and not is_flagged:
+                return 1
+            if has_number and is_flagged:
+                return 2
+            if not has_number and not is_flagged:
+                return 3
+            return 4
+
+        def review_note(row):
+            has_number = pd.notna(row["yield_pct_actual"])
+            notes = []
+            if row.get("is_monthly_rental"):
+                notes.append("إيجار شهري متجدد، مو عقد سنوي")
+            if row.get("is_shared_deed"):
+                notes.append("عقار مقسّم/مفرز أو بصك مشترك")
+            if not has_number:
+                notes.append("مؤجّرة لكن بدون رقم إيجار موثوق")
+            return "⚠️ تحتاج مراجعة يدوية -- " + " | ".join(notes) if notes else ""
 
         result_df["_sort_priority"] = result_df.apply(sort_priority, axis=1)
-        result_df["review_status"] = result_df["_sort_priority"].map({
-            0: "",
-            1: "⚠️ تحتاج مراجعة يدوية -- مؤجّرة لكن بدون رقم إيجار موثوق",
-        })
+        result_df["review_status"] = result_df.apply(review_note, axis=1)
+        # داخل نفس مستوى الأولوية: الأعلى عائدًا أول، وبعدها الأحدث عمرًا
+        # (age_years أصغر = أفضل)
         result_df = result_df.sort_values(
-            ["_sort_priority", "yield_pct_actual"], ascending=[True, False]
+            ["_sort_priority", "yield_pct_actual", "age_years"],
+            ascending=[True, False, True]
         ).drop(columns=["_sort_priority"])
 
     with_rent = result_df["actual_annual_rent"].notna().sum() if len(result_df) else 0
