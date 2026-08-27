@@ -1,17 +1,15 @@
 """
 محلل صفقات عميق -- يشتغل بس على العقارات "الأفضل" من
-find_currently_rented_properties.py (بدون أي تحذير: رقم إيجار موثوق + صك
-مستقل + سنوي)، ويحلل أعلى 10 فرص بالعائد.
+find_currently_rented_properties.py (بدون أي تحذير)، ويحلل أعلى 10 فرص بالعائد.
 
-مصدر مقارنة السعر: رغدان (raghdan.sa) -- سحب حي مباشر لكل عقار وقت التحليل.
-رغدان تعتمد على بيانات وزارة العدل المفتوحة (open.data.gov.sa) نفسها، بس
-معروضة جاهزة لكل حي (متوسط + نطاق شائع + عدد صفقات + نمو سنوي)، فما نحتاج
-نحتفظ بملف صفقات محلي ضخم.
-
-⚠️ منهجية مهمة: نقارن بـ"النطاق الشائع" الكامل (من-إلى)، مو بس المتوسط --
-عقار سعره أعلى من المتوسط بس لسا داخل النطاق الشائع يعتبر سعره طبيعي، مو مرتفع.
+مصدر مقارنة السعر: متوسط سعر متر الحي من رغدان (raghdan.sa) -- سحب حي مباشر
+وقت التحليل، مبني على بيانات وزارة العدل المفتوحة.
 
 مصدر مقارنة الإيجار: مؤشرات سكني الرسمية (حسب الحي وعدد الغرف).
+
+الجدول النهائي: بيانات أساسية + عمود التوصية (Proceed/Review/Reject) + عمود
+"تفاصيل" أخير فيه نفس أسلوب التحليل السردي الكامل (سعر المتر، العائد،
+استدامة الإيجار، اختبار ضغط، سعر شراء مقترح).
 """
 
 import pandas as pd
@@ -39,8 +37,7 @@ RAGHDAN_MIN_DELAY = 2.0
 
 
 def fetch_raghdan_district_data(district, city="الرياض"):
-    """يسحب بيانات حي كاملة من رغدان: متوسط السعر، النطاق الشائع، عدد
-    الصفقات، والنمو السنوي -- مصدرها وزارة العدل، معروضة جاهزة لكل حي"""
+    """يسحب متوسط سعر متر الحي من رغدان -- مبني على بيانات وزارة العدل المفتوحة"""
     district_bare = district.replace("حي ", "").strip() if isinstance(district, str) else district
     url = f"https://raghdan.sa/en/market/{urllib.parse.quote(city)}/{urllib.parse.quote(district_bare)}/"
 
@@ -48,35 +45,28 @@ def fetch_raghdan_district_data(district, city="الرياض"):
         req = urllib.request.Request(url, headers=RAGHDAN_HEADERS)
         with urllib.request.urlopen(req, timeout=20) as resp:
             html = resp.read().decode("utf-8", errors="ignore")
-    except Exception as e:
-        return None, f"فشل سحب رغدان: {e}", url
+    except Exception:
+        return None, url
 
-    # نستهدف og:description أول (الصيغة الطويلة، فيها عدد الصفقات والنمو
-    # صراحة) -- لو ما لقيناها، نرجع لأي meta description ثانية كخطة بديلة
     og_match = re.search(r'<meta[^>]+property="og:description"[^>]+content="([^"]+)"', html)
     generic_match = re.search(r'<meta[^>]+name="description"[^>]+content="([^"]+)"', html)
     meta_match = og_match or generic_match
     if not meta_match:
-        return None, "ما لقينا بيانات رغدان بصيغة متوقعة لهالحي", url
+        return None, url
 
     summary = meta_match.group(1)
     price_match = re.search(r"([\d,]+)\s*SAR/m", summary)
-    # نتقبل الصيغتين: "transactions: 10,525" (طويلة) أو "10,525 transactions" (قصيرة)
     trans_match = (
         re.search(r"transactions:\s*([\d,]+)", summary, re.IGNORECASE)
         or re.search(r"([\d,]+)\s*transactions", summary, re.IGNORECASE)
     )
-    growth_match = re.search(r"growth:\s*([+-]?[\d.]+)%", summary, re.IGNORECASE)
-
     if not price_match:
-        return None, "ما قدرنا نستخرج سعر المتر من صفحة رغدان", url
+        return None, url
 
     return {
         "avg_price_per_sqm": float(price_match.group(1).replace(",", "")),
         "transactions": int(trans_match.group(1).replace(",", "")) if trans_match else None,
-        "yoy_growth_pct": float(growth_match.group(1)) if growth_match else None,
-        "url": url,
-    }, None, url
+    }, url
 
 
 def find_rent_reference(sakani_df, district, rooms):
@@ -102,39 +92,19 @@ def find_rent_reference(sakani_df, district, rooms):
     return {"annual_rent": rent * 1000, "deals_count": count, "rooms": rooms_int}
 
 
-def compute_price_assessment(property_price_per_sqm, raghdan_data):
-    """يحسب تقييم السعر برمجيًا (مو بالـ LLM) -- مقارنة بمتوسط سعر متر الحي
-    من رغدان (نفس مصدر وزارة العدل)، بحدود نسبة واضحة وثابتة"""
-    if raghdan_data is None:
-        return {"assessment": "غير متوفر", "price_vs_avg_pct": None, "target_purchase_price_per_sqm": None}
+PROMPT_TEMPLATE = """أنت محلل عقاري خبير بسوق الرياض. حلّل صفقة الشراء التالية
+بعمق، بنفس أسلوب تحليل استثماري احترافي مفصّل: سعر المتر ومقارنته بالسوق،
+العائد الحالي، استدامة الإيجار، اختبار ضغط بسيناريو محافظ، وسعر شراء مقترح
+للتفاوض.
 
-    avg = raghdan_data["avg_price_per_sqm"]
-    price_vs_avg_pct = round((property_price_per_sqm / avg - 1) * 100, 1)
-
-    if price_vs_avg_pct <= 10:
-        assessment = f"سعر عادل (قريب من متوسط الحي، {price_vs_avg_pct:+.1f}%)"
-        target_per_sqm = property_price_per_sqm  # ما يحتاج تفاوض
-    elif price_vs_avg_pct <= 25:
-        assessment = f"أعلى من متوسط الحي بشكل ملحوظ ({price_vs_avg_pct:+.1f}%)"
-        target_per_sqm = avg * 1.10  # نفاوض لحد 10% فوق المتوسط بس
-    else:
-        assessment = f"مرتفع بشكل واضح عن متوسط الحي ({price_vs_avg_pct:+.1f}%)"
-        target_per_sqm = avg  # نفاوض للمتوسط نفسه
-
-    return {"assessment": assessment, "price_vs_avg_pct": price_vs_avg_pct, "target_purchase_price_per_sqm": target_per_sqm}
-
-
-PROMPT_TEMPLATE = """أنت محلل عقاري خبير بسوق الرياض. اكتب تحليل استثماري موجز
-لهذي الصفقة -- ركّز بس على الإيجار واستدامته، والقصة العامة، لأن حساب السعر
-تم برمجيًا مسبقًا وأعطيناك النتيجة جاهزة.
-
-بيانات الصفقة (بعد الحساب البرمجي):
+بيانات الصفقة:
 - الحي: {district}
 - السعر: {price} ريال ({area} م²، {price_per_sqm} ريال/م²)
-- تقييم السعر: {price_assessment}
-- سعر شراء مستهدف مقترح: {target_price} ريال
 - الإيجار الحالي المذكور: {annual_rent} ريال سنويًا (عائد {yield_pct}%)
 - تفاصيل العقد: {lease_details}
+
+متوسط سعر متر الحي (رغدان، مبني على وزارة العدل): {raghdan_avg}
+{raghdan_trans}
 
 الإيجار الرسمي المرجعي لنفس الحي وعدد الغرف (مؤشرات سكني):
 {rent_reference}
@@ -144,23 +114,22 @@ PROMPT_TEMPLATE = """أنت محلل عقاري خبير بسوق الرياض. 
 {description}
 \"\"\"
 
+⚠️ تحذير حرج بخصوص الإيجار: السعر المذكور أعلاه ({annual_rent} ريال) هو
+**الإيجار السنوي الكامل بالفعل**، حتى لو مذكور بالوصف "على دفعتين" أو "كل 6
+أشهر" -- لا تضاعفه أبدًا بأي حساب أو تفسير.
+
 أرجع JSON فقط (بدون أي نص إضافي أو علامات markdown):
 
 {{
-  "rent_sustainability": "مستدام" أو "مرتفع مؤقتًا" أو "غير مؤكد" -- بناءً على مقارنة رقمية بحتة بالإيجار المرجعي من سكني,
-  "rent_sustainability_reason": "جملة مختصرة تعتمد فقط على المقارنة الرقمية -- ⚠️ ممنوع نهائيًا ذكر الأثاث كسبب",
-  "stress_test_rent_low": رقم -- سيناريو محافظ لإيجار مستقبلي منخفض,
-  "stress_test_yield_low": رقم -- العائد بهالسيناريو,
-  "lease_term_note": "جملة مختصرة عن مدة العقد المتبقية",
-  "key_risk": "أهم نقطة خطر أو تستاهل تحقق، جملة وحدة",
+  "target_purchase_price": رقم -- سعر شراء مستهدف للتفاوض، مبني على مقارنة سعر المتر بمتوسط الحي وعائد مستهدف معقول,
   "final_verdict": "🟢 Proceed" أو "🟡 Review" أو "🔴 Reject",
-  "verdict_summary": "ملخص سردي قصير (جملتين لثلاث) يلخّص القصة الكاملة -- السعر، العائد، أهم نقطة إيجابية، أهم تحفّظ، والتوصية"
+  "تفاصيل": "ملخص سردي كامل ومفصّل (فقرة أو فقرتين) يغطي: سعر المتر ومقارنته بمتوسط الحي، العائد الحالي بالحساب، استدامة الإيجار مقارنة بمرجع سكني، اختبار ضغط بسيناريو محافظ (رقم بديل للإيجار والعائد الناتج)، أي ملاحظة مهمة، وسعر الشراء المقترح مع تبرير الرقم"
 }}"""
 
 
 def call_claude(prompt, api_key):
     payload = json.dumps({
-        "model": MODEL, "max_tokens": 1200,
+        "model": MODEL, "max_tokens": 1500,
         "messages": [{"role": "user", "content": prompt}],
     }).encode("utf-8")
     req = urllib.request.Request(
@@ -211,12 +180,17 @@ def main():
         area = row.get("area_sqm")
         price = row.get("price")
         rooms = row.get("rooms")
+        listing_id = row.get("listing_id")
 
-        raghdan_data, raghdan_error, raghdan_url = fetch_raghdan_district_data(district)
+        raghdan_data, raghdan_url = fetch_raghdan_district_data(district)
         time.sleep(RAGHDAN_MIN_DELAY)
+        raghdan_avg_text = f"{raghdan_data['avg_price_per_sqm']:,.0f} ريال/م²" if raghdan_data else "غير متوفر"
+        raghdan_trans_text = (
+            f"(مبني على {raghdan_data['transactions']:,} صفقة مسجّلة)"
+            if raghdan_data and raghdan_data.get("transactions") else ""
+        )
 
         property_price_per_sqm = round(price / area) if price and area else None
-        price_calc = compute_price_assessment(property_price_per_sqm, raghdan_data)
 
         rent_ref = find_rent_reference(sakani_df, district, rooms)
         rent_ref_text = (
@@ -224,17 +198,11 @@ def main():
             if rent_ref else "غير متوفر لهالحي/عدد الغرف"
         )
 
-        target_price = (
-            round(price_calc["target_purchase_price_per_sqm"] * area)
-            if price_calc["target_purchase_price_per_sqm"] and area else price
-        )
-
         prompt = PROMPT_TEMPLATE.format(
-            district=district, price=price, area=area,
-            price_per_sqm=property_price_per_sqm, price_assessment=price_calc["assessment"],
-            target_price=target_price,
+            district=district, price=price, area=area, price_per_sqm=property_price_per_sqm,
             annual_rent=row.get("actual_annual_rent"), yield_pct=row.get("yield_pct_actual"),
             lease_details=row.get("lease_details") or "غير مذكور",
+            raghdan_avg=raghdan_avg_text, raghdan_trans=raghdan_trans_text,
             rent_reference=rent_ref_text,
             description=str(row.get("description", ""))[:3000],
         )
@@ -243,37 +211,24 @@ def main():
             response_text = call_claude(prompt, api_key)
             analysis = parse_json_response(response_text)
         except Exception as e:
-            print(f"[{i}/{len(candidates)}] فشل تحليل {row.get('listing_id')}: {e}")
+            print(f"[{i}/{len(candidates)}] فشل تحليل {listing_id}: {e}")
             continue
 
         results.append({
-            "listing_id": row.get("listing_id"),
+            "listing_id": listing_id,
             "url": row.get("url"),
             "district": district,
             "price": price,
             "area_sqm": area,
             "price_per_sqm": property_price_per_sqm,
-            "raghdan_avg_price_per_sqm": raghdan_data["avg_price_per_sqm"] if raghdan_data else None,
-            "raghdan_transactions": raghdan_data["transactions"] if raghdan_data else None,
-            "raghdan_yoy_growth_pct": raghdan_data["yoy_growth_pct"] if raghdan_data else None,
-            "price_assessment": price_calc["assessment"],
-            "price_vs_avg_pct": price_calc["price_vs_avg_pct"],
-            "مصدر_المقارنة": "رغدان (raghdan.sa) -- مبني على بيانات وزارة العدل" if raghdan_data else f"غير متوفر ({raghdan_error})",
-            "raghdan_url": raghdan_url,
-            "target_purchase_price": target_price,
             "actual_annual_rent": row.get("actual_annual_rent"),
             "current_yield_pct": row.get("yield_pct_actual"),
-            "rent_sustainability": analysis.get("rent_sustainability"),
-            "rent_sustainability_reason": analysis.get("rent_sustainability_reason"),
-            "stress_test_rent_low": analysis.get("stress_test_rent_low"),
-            "stress_test_yield_low": analysis.get("stress_test_yield_low"),
-            "lease_term_note": analysis.get("lease_term_note"),
-            "key_risk": analysis.get("key_risk"),
+            "target_purchase_price": analysis.get("target_purchase_price"),
             "final_verdict": analysis.get("final_verdict"),
-            "verdict_summary": analysis.get("verdict_summary"),
+            "تفاصيل": analysis.get("تفاصيل"),
         })
 
-        print(f"[{i}/{len(candidates)}] {row.get('listing_id')} -- {district} -- {price_calc['assessment']} -- {analysis.get('final_verdict')}")
+        print(f"[{i}/{len(candidates)}] {listing_id} -- {district} -- {analysis.get('final_verdict')}")
 
     result_df = pd.DataFrame(results)
     if len(result_df):
