@@ -195,6 +195,11 @@ def groq_request(
     headers = {
         "Content-Type": "application/json",
         "Authorization": f"Bearer {api_key}",
+        # مهم: بدون هذا الرأس، urllib.request يرسل "Python-urllib/3.x"
+        # كـUser-Agent افتراضي -- Cloudflare (اللي يحمي Groq) يحظره كبصمة
+        # بوت مشبوهة (خطأ 1010). نرسل بصمة متصفح حقيقية بدلها.
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+                      "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
     }
 
     if enable_web_tools:
