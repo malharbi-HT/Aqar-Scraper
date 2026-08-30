@@ -63,7 +63,7 @@ RESEARCH_DIR.mkdir(parents=True, exist_ok=True)
 
 API_URL = "https://api.groq.com/openai/v1/chat/completions"
 
-EXTRACTION_MODEL = "llama-3.3-70b-versatile"
+EXTRACTION_MODEL = "openai/gpt-oss-120b"  # llama-3.3-70b-versatile قاعد رسميًا (17 يونيو 2026)، هذا البديل الموصى به من Groq
 RESEARCH_MODEL = "groq/compound"
 
 HISSATECH_MIN_YIELD = 6.0
