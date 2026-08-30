@@ -1,0 +1,28 @@
+name: HissaTech Deal Analyzer (Groq Compound)
+
+on:
+  workflow_dispatch:   # تشغيل يدوي -- خط كامل: استخراج + تصنيف + بحث ويب حقيقي + تقارير Markdown
+
+jobs:
+  analyze:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: pip install pandas
+      - name: Run HissaTech analyzer
+        env:
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+        run: python hissatech_analyzer.py
+      - name: Commit result
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add data/currently_rented_properties.csv data/deep_analysis_rented_properties.csv reports/ research/
+          git commit -m "HissaTech deal analysis run" || echo "No changes"
+          for i in 1 2 3 4 5; do
+            git pull --rebase origin main && git push && break
+            sleep 5
+          done
