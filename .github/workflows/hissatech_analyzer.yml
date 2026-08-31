@@ -1,7 +1,12 @@
 name: HissaTech Deal Analyzer (Groq Compound)
 
 on:
-  workflow_dispatch:   # تشغيل يدوي -- خط كامل: استخراج + تصنيف + بحث ويب حقيقي + تقارير Markdown
+  workflow_dispatch:
+    inputs:
+      test_limit:
+        description: 'وضع تجريبي: عدد العقارات (سيبه فاضي للتشغيل الكامل)'
+        required: false
+        type: string
 
 jobs:
   analyze:
@@ -15,6 +20,7 @@ jobs:
       - name: Run HissaTech analyzer
         env:
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          TEST_LIMIT: ${{ inputs.test_limit }}
         run: python hissatech_analyzer.py
       - name: Commit result
         run: |
