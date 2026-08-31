@@ -70,7 +70,7 @@ HISSATECH_MIN_YIELD = 6.0
 EXIT_HORIZON = "3-5 سنوات"
 
 DEEP_ANALYZE_TOP_N = 10
-EXTRACTION_DELAY_SECONDS = 0.35
+EXTRACTION_DELAY_SECONDS = 3.0  # رُفع من 0.35 -- حد Groq المجاني 8000 توكن/دقيقة، هالتأخير يبقينا تحته
 RESEARCH_DELAY_SECONDS = 1.5
 MAX_DESCRIPTION_CHARS = 5000
 MAX_API_RETRIES = 2
@@ -206,6 +206,7 @@ def groq_request(
         headers["Groq-Model-Version"] = "latest"
 
     last_error = None
+    rate_limit_wait = None  # لو صار 429، نحفظ الوقت المقترح من رسالة الخطأ نفسها
 
     for attempt in range(MAX_API_RETRIES + 1):
         try:
@@ -234,13 +235,24 @@ def groq_request(
                 body = ""
             last_error = RuntimeError(f"Groq HTTP {exc.code}: {body[:1000]}")
 
+            # خطأ 429 (تجاوز حد الاستخدام) -- نستخرج وقت الانتظار المقترح
+            # من رسالة الخطأ نفسها ("Please try again in X.XXs")، وننتظره
+            # بدقة بدل الانتظار القصير الثابت العادي
+            if exc.code == 429:
+                wait_match = re.search(r"try again in ([\d.]+)s", body)
+                if wait_match:
+                    rate_limit_wait = float(wait_match.group(1)) + 1.0  # هامش أمان
+                else:
+                    rate_limit_wait = 15.0  # احتياطي لو ما لقينا الرقم بالرسالة
+
         except Exception as exc:
             last_error = exc
 
         if attempt < MAX_API_RETRIES:
-            wait_seconds = 2 ** attempt
-            print(f"  API retry {attempt + 1}/{MAX_API_RETRIES} after {wait_seconds}s...")
+            wait_seconds = rate_limit_wait if rate_limit_wait else 2 ** attempt
+            print(f"  API retry {attempt + 1}/{MAX_API_RETRIES} after {wait_seconds:.1f}s...")
             time.sleep(wait_seconds)
+            rate_limit_wait = None  # نصفّرها لو المحاولة الجاية نجحت أو صار خطأ ثاني
 
     raise last_error
 
@@ -997,6 +1009,13 @@ def main():
     candidate_mask = df["description"].fillna("").astype(str).str.contains(RENTED_HINTS, na=False)
     candidates = df[candidate_mask].copy()
     print(f"Stage 1 - rent-related candidates: {len(candidates):,}")
+
+    # وضع تجريبي: لو متغير البيئة TEST_LIMIT محدّد، نقتصر على هالعدد بس
+    # (يوفّر توكن وقت التجربة، بدل تشغيل كل المرشحين)
+    test_limit = os.environ.get("TEST_LIMIT")
+    if test_limit:
+        candidates = candidates.head(int(test_limit))
+        print(f"وضع تجريبي مفعّل -- مقتصر على {len(candidates)} عقار بس")
 
     extracted_rows = []
 
