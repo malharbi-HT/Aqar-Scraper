@@ -1,1 +1,3 @@
-﻿
+﻿listing_id,url,district,price,area_sqm,price_per_sqm,actual_annual_rent,current_yield_pct,rent_multiple_years,initial_verdict,final_verdict,confidence,negotiation_range,report_path,research_path
+6642527,https://sa.aqar.fm/شقق-للبيع/الرياض/شمال-الرياض/حي-النرجس/شارع-سليمان-الحمدان-حي-النرجس-مدينة-الرياض-منطقة-الرياض-6642527,حي النرجس,889999.0,75.0,11867.0,70000.0,7.87,12.71,Proceed,Review,عالية نسبيًا.,"850,000 – 920,000 ريال",reports/6642527.md,research/6642527_tools.json
+6755542,https://sa.aqar.fm/شقق-للبيع/الرياض/شمال-الرياض/حي-النرجس/شارع-سليمان-الحمدان-حي-النرجس-مدينة-الرياض-منطقة-الرياض-6755542,حي النرجس,909999.0,75.0,12133.0,70000.0,7.69,13.0,Proceed,Review,عالية نسبيًا.,"880,000–950,000 ريال.",reports/6755542.md,research/6755542_tools.json
