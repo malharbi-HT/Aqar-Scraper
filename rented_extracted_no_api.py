@@ -215,6 +215,54 @@ def normalize_for_duplicate_check(description):
     return text
 
 
+# قائمة الخصائص الشائعة -- كل عنصر (التسمية الموحّدة، نمط الكشف) بترتيب
+# منطقي. النمط يبحث بالوصف، ولو طابق نضيف التسمية الموحّدة لقائمة الخصائص
+FEATURE_PATTERNS = [
+    ("دخول ذكي", r"دخول\s*ذكي|سمارت\s*هوم|smart\s*home|نظام\s*ذكي"),
+    ("مصعد", r"مصعد|أسانسير|اصنصير"),
+    ("موقف خاص", r"موقف\s*(?:سيارة\s*)?خاص|موقف\s*خارجي\s*خاص|موقف\s*بالقبو|موقف\s*بدروم"),
+    ("مطبخ راكب", r"مطبخ\s*راكب|مطبخ\s*مجهز|مطبخ\s*متكامل|مطبخ\s*مركّب|مطبخ\s*مركب"),
+    ("مكيفات راكبة", r"مكيفات\s*راكبة|مكيفات\s*سبليت|مكيفات\s*سبلت|تكييف\s*مركزي|تكييف\s*راكب|مكيفات\s*مركزية"),
+    ("اتحاد ملاك", r"اتحاد\s*ملاك|جمعية\s*ملاك"),
+    ("حوش خاص", r"حوش\s*(?:خاص|خلفي|جانبي)?|ارتداد"),
+    ("سطح خاص", r"سطح\s*خاص|سطح\s*(?:كبير|واسع)"),
+    ("كاميرات مراقبة", r"كاميرات\s*مراقبة|نظام\s*أمني|كاميرات\s*خارجية"),
+    ("نادي رياضي", r"نادي\s*رياضي|جيم\b|GYM"),
+    ("مسبح", r"مسبح|مسابح"),
+    ("حضانة أطفال", r"حضانة\s*أطفال|روضة\s*أطفال|حاضنة\s*أطفال"),
+    ("بلكونة", r"بلكونة|بلكونتان|بلكونتين"),
+    ("تشطيب فاخر", r"تشطيب\s*فاخر|تشطيبات\s*فاخرة|تشطيب\s*راقي"),
+    ("عداد كهرباء مستقل", r"عداد\s*كهرباء\s*مستقل|عداد\s*كهرب\s*مستقل"),
+    ("عداد ماء مستقل", r"عداد\s*(?:ماء|مياه)\s*مستقل"),
+    ("مؤثثة", r"مؤثثة|مفروشة|أثاث\s*فاخر|أثاث\s*كامل"),
+    ("غرفة خادمة", r"غرفة\s*خادمة|غرفة\s*عاملة|غرفة\s*خدمات"),
+    ("مستودع", r"مستودع|مخزن"),
+    ("مدخل خاص", r"مدخل\s*خاص|مدخل\s*مستقل"),
+    ("ألياف ضوئية", r"ألياف\s*ضوئية|فايبر"),
+    ("خزان مستقل", r"خزان\s*(?:مياه\s*)?مستقل|خزان\s*(?:أرضي|علوي)\s*(?:و(?:أرضي|علوي)\s*)?مستقل"),
+    ("دور أرضي", r"دور\s*أرضي|الدور\s*الأرضي"),
+    ("صك مستقل", r"صك\s*(?:مستقل|إلكتروني|حر)"),
+    ("رهن عقاري", r"مرهون|رهن\s*عقاري|عليها\s*رهن"),
+    ("قريب من الخدمات", r"قريب(?:ة)?\s*من\s*(?:جميع\s*)?الخدمات|قريب(?:ة)?\s*من\s*محطة\s*المترو"),
+]
+
+
+def extract_key_features(description):
+    """يستخرج أهم خصائص العقار من الوصف عبر Regex -- بدون أي API. يرجع
+    قائمة مفصولة بـ | بنفس أسلوب الأمثلة (دخول ذكي | موقف خاص | مصعد...)"""
+    if not isinstance(description, str) or not description.strip():
+        return ""
+    text = normalize_digits(description)
+    text = re.sub(r"[\u064B-\u065F\u0670]", "", text)
+
+    found = []
+    for label, pattern in FEATURE_PATTERNS:
+        if re.search(pattern, text, re.IGNORECASE):
+            found.append(label)
+
+    return " | ".join(found)
+
+
 def main():
     if not os.path.exists(INPUT_PATH):
         print(f"تحذير: ما لقيت {INPUT_PATH}")
@@ -241,6 +289,7 @@ def main():
         if pd.notna(r["actual_annual_rent"]) and r.get("price") else None,
         axis=1
     )
+    candidates["key_features"] = candidates["description"].apply(extract_key_features)
 
     with_rent = candidates["actual_annual_rent"].notna().sum()
     print(f"لقينا رقم إيجار موثوق: {with_rent} من {len(candidates)}")
@@ -258,9 +307,23 @@ def main():
 
     cols = [c for c in ["listing_id", "url", "title", "district", "direction", "price",
                           "area_sqm", "rooms", "bathrooms", "age_years",
-                          "actual_annual_rent", "yield_pct",
+                          "actual_annual_rent", "yield_pct", "key_features",
                           "description"] if c in candidates.columns]
     candidates = candidates[cols]
+
+    # تنسيق فواصل الآلاف للأرقام الكبيرة (السعر والإيجار) -- يسهّل القراءة
+    # بإكسل. نحوّلها لنص منسّق، فيبقى العمود الرقمي يقرأ صح لو احتجته لاحقًا
+    for col in ["price", "actual_annual_rent"]:
+        if col in candidates.columns:
+            candidates[col] = candidates[col].apply(
+                lambda v: f"{v:,.0f}" if pd.notna(v) else v
+            )
+
+    # تنسيق العائد كنسبة مئوية بعلامة % صريحة
+    if "yield_pct" in candidates.columns:
+        candidates["yield_pct"] = candidates["yield_pct"].apply(
+            lambda v: f"{v:.2f}%" if pd.notna(v) else v
+        )
 
     candidates.to_csv(OUTPUT_PATH, index=False, encoding="utf-8-sig")
     print(f"تم الحفظ: {OUTPUT_PATH}")
