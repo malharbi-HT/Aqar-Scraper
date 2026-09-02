@@ -245,23 +245,20 @@ def main():
     with_rent = candidates["actual_annual_rent"].notna().sum()
     print(f"لقينا رقم إيجار موثوق: {with_rent} من {len(candidates)}")
 
-    # كشف التكرار: نفس الوصف (بعد التطبيع) برقم إعلان مختلف -- يعني نفس
-    # العقار أُعيد نشره أو نسخ من وسيط لوسيط
+    # حذف التكرار: نفس الوصف (بعد التطبيع) برقم إعلان مختلف -- يعني نفس
+    # العقار أُعيد نشره أو نسخ من وسيط لوسيط -- نبقي نسخة وحدة بس (الأولى)
     candidates["_normalized_desc"] = candidates["description"].apply(normalize_for_duplicate_check)
-    dup_counts = candidates.groupby("_normalized_desc")["_normalized_desc"].transform("count")
-    candidates["is_duplicate_listing"] = dup_counts > 1
-    candidates["duplicate_group_size"] = dup_counts
+    before_dedup = len(candidates)
+    candidates = candidates.drop_duplicates(subset="_normalized_desc", keep="first")
     candidates = candidates.drop(columns=["_normalized_desc"])
-
-    dup_count = candidates["is_duplicate_listing"].sum()
-    print(f"إعلانات مكررة (نفس الوصف، رقم إعلان مختلف): {dup_count}")
+    removed = before_dedup - len(candidates)
+    print(f"حذفنا {removed} إعلان مكرر (نفس الوصف، رقم إعلان مختلف)")
 
     candidates = candidates.sort_values("yield_pct", ascending=False, na_position="last")
 
     cols = [c for c in ["listing_id", "url", "title", "district", "direction", "price",
                           "area_sqm", "rooms", "bathrooms", "age_years",
-                          "actual_annual_rent", "yield_pct", "rent_extraction_note",
-                          "is_duplicate_listing", "duplicate_group_size",
+                          "actual_annual_rent", "yield_pct",
                           "description"] if c in candidates.columns]
     candidates = candidates[cols]
 
