@@ -303,7 +303,14 @@ def main():
     removed = before_dedup - len(candidates)
     print(f"حذفنا {removed} إعلان مكرر (نفس الوصف، رقم إعلان مختلف)")
 
-    candidates = candidates.sort_values("yield_pct", ascending=False, na_position="last")
+    # ترتيب بمستويين: (1) اللي له عائد محسوب -- تنازليًا حسب العائد
+    # (2) اللي مؤجّر بدون عائد صريح -- حسب العمر من الأجدد للأقدم (القديم آخر شي)
+    candidates["_has_yield"] = candidates["yield_pct"].notna()
+    candidates = candidates.sort_values(
+        ["_has_yield", "yield_pct", "age_years"],
+        ascending=[False, False, True],
+        na_position="last"
+    ).drop(columns=["_has_yield"])
 
     cols = [c for c in ["listing_id", "url", "title", "district", "direction", "price",
                           "area_sqm", "rooms", "bathrooms", "age_years",
