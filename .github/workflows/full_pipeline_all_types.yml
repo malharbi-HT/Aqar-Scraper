@@ -1,0 +1,105 @@
+name: Full Pipeline (All Property Types - Scrape to Rented Extraction)
+
+on:
+  workflow_dispatch:   # تشغيل يدوي -- بايبلاين كامل: شقق + كل الأنواع الثانية، من السحب لاستخراج المؤجّرة
+
+jobs:
+  # ══════════════════════════════════════════════════════════
+  # المسار 1: الشقق (سلسلة كاملة، سبع خطوات تنظيف + استخراج مؤجّرة)
+  # ══════════════════════════════════════════════════════════
+  apartments_pipeline:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: pip install pandas requests beautifulsoup4 lxml
+
+      - name: 1) Scrape sale listings (apartments)
+        run: python scraper_sale.py
+      - name: 2) Fix price (NLP)
+        run: python fix_price_nlp.py
+      - name: 3) Fix area (NLP)
+        run: python fix_area_nlp.py
+      - name: 4) Finalize area
+        run: python finalize_area.py
+      - name: 5) Cross-check area
+        run: python cross_check_area.py
+      - name: 6) Fix rooms/bathrooms
+        run: python fix_rooms_bathrooms_sale.py
+      - name: 7) Detect anomalies
+        run: python detect_anomalies.py
+      - name: 8) Merge final report
+        run: python merge_final_report.py
+      - name: 9) Extract rented apartments (no API)
+        run: python rented_extracted_no_api.py
+
+      - name: Commit apartment results
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add data/
+          git commit -m "Apartments pipeline: scrape -> clean -> extract rented" || echo "No changes"
+          for i in 1 2 3 4 5; do
+            git pull --rebase origin main && git push && break
+            sleep 5
+          done
+
+  # ══════════════════════════════════════════════════════════
+  # المسار 2: الأنواع الثانية (فلل/أدوار/عمائر/مكاتب/أراضي)
+  # سحب متوازي (matrix) + تنظيف + استخراج مؤجّرة موحّد
+  # ══════════════════════════════════════════════════════════
+  scrape_other_types:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        property_type:
+          - { script: scraper_villa.py,    key: villa }
+          - { script: scraper_floor.py,    key: floor }
+          - { script: scraper_land.py,     key: land }
+          - { script: scraper_building.py, key: building }
+          - { script: scraper_office.py,   key: office }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: pip install pandas requests beautifulsoup4 lxml
+      - name: Scrape ${{ matrix.property_type.key }}
+        run: python ${{ matrix.property_type.script }}
+      - name: Commit ${{ matrix.property_type.key }} raw data
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add data/listings_${{ matrix.property_type.key }}.csv
+          git commit -m "Scrape ${{ matrix.property_type.key }}" || echo "No changes"
+          for i in 1 2 3 4 5; do
+            git pull --rebase origin main && git push && break
+            sleep 5
+          done
+
+  clean_and_extract_other_types:
+    needs: scrape_other_types   # ننتظر كل أنواع السحب تخلص أول
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: pip install pandas
+      - name: Clean property types (anomaly exclusion)
+        run: python clean_property_types.py
+      - name: Extract rented other types (no API)
+        run: python rented_other_types_no_api.py
+      - name: Commit other-types results
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add data/
+          git commit -m "Other types pipeline: clean -> extract rented" || echo "No changes"
+          for i in 1 2 3 4 5; do
+            git pull --rebase origin main && git push && break
+            sleep 5
+          done
