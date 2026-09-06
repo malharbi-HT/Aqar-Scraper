@@ -14,7 +14,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-      - run: pip install pandas requests beautifulsoup4 lxml
+      - run: pip install pandas requests beautifulsoup4 lxml scikit-learn
 
       - name: 1) Scrape sale listings (apartments)
         run: python scraper_sale.py
@@ -66,7 +66,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-      - run: pip install pandas requests beautifulsoup4 lxml
+      - run: pip install pandas requests beautifulsoup4 lxml scikit-learn
       - name: Scrape ${{ matrix.property_type.key }}
         run: python ${{ matrix.property_type.script }}
       - name: Commit ${{ matrix.property_type.key }} raw data
@@ -88,7 +88,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-      - run: pip install pandas
+      - run: pip install pandas scikit-learn
       - name: Clean property types (anomaly exclusion)
         run: python clean_property_types.py
       - name: Extract rented other types (no API)
