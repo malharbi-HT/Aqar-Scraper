@@ -105,7 +105,7 @@ def main():
         na_position="last"
     ).drop(columns=["_has_yield"])
 
-    cols = [c for c in ["listing_id", "url", "title", "نوع_العقار", "district", "direction",
+    cols = [c for c in ["listing_id", "url", "title", "published_at", "نوع_العقار", "district", "direction",
                           "price", "area_sqm", "rooms", "bathrooms", "age_years",
                           "actual_annual_rent", "yield_pct", "key_features",
                           "description"] if c in combined.columns]
