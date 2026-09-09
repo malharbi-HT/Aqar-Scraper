@@ -1,7 +1,9 @@
-name: Full Pipeline (All Property Types - Scrape to Rented Extraction)
+name: Daily Full Pipeline (All Types + Owner-Direct Rented)
 
 on:
-  workflow_dispatch:   # تشغيل يدوي -- بايبلاين كامل: شقق + كل الأنواع الثانية، من السحب لاستخراج المؤجّرة
+  schedule:
+    - cron: '13 18 * * *'   # يوميًا، 9:13 مساءً بتوقيت السعودية (نفس توقيت البايبلاين اليومي الأساسي بالمشروع)
+  workflow_dispatch:          # + إمكانية تشغيل يدوي وقت الحاجة
 
 jobs:
   # ══════════════════════════════════════════════════════════
@@ -34,13 +36,15 @@ jobs:
         run: python merge_final_report.py
       - name: 9) Extract rented apartments (no API)
         run: python rented_extracted_no_api.py
+      - name: 10) Extract rented from owner (no API)
+        run: python rented_from_owner_no_api.py
 
       - name: Commit apartment results
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add data/
-          git commit -m "Apartments pipeline: scrape -> clean -> extract rented" || echo "No changes"
+          git commit -m "Apartments pipeline: scrape -> clean -> extract rented (+ owner-direct)" || echo "No changes"
           for i in 1 2 3 4 5; do
             git pull --rebase origin main && git push && break
             sleep 5
