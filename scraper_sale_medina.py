@@ -163,7 +163,10 @@ def scrape_district(district_url, district_name, type_label):
                 listing_links.add(href)
 
         if page_num == 1 and not listing_links:
-            # تشخيص: نوري عينة روابط حقيقية من الصفحة عشان نفهم شكلها الفعلي
+            # تشخيص: نوري عينة روابط حقيقية + معاينة HTML خام
+            print(f"    [تشخيص] حجم HTML الخام: {len(html)} حرف")
+            print(f"    [تشخيص] أول 400 حرف من HTML الخام:")
+            print(f"    [تشخيص] {html[:400]!r}")
             print(f"    [تشخيص] إجمالي روابط بالصفحة: {len(all_page_links)}")
             sample_hrefs = [urljoin(BASE_URL, a["href"]) for a in all_page_links[:15]]
             for h in sample_hrefs:
@@ -196,8 +199,14 @@ def scrape_district(district_url, district_name, type_label):
 
 
 def main():
+    print("###### SCRIPT VERSION: DIAGNOSTIC-v2 ######")
+    print("لو ما شفت هالسطر بالسجل، النسخة القديمة هي اللي اشتغلت")
     os.makedirs(DATA_DIR, exist_ok=True)
     all_results = []
+
+    quick_debug = os.environ.get("QUICK_DEBUG") == "1"
+    if quick_debug:
+        print("###### وضع تشخيص سريع مفعّل -- يوقف بعد أول حي ######")
 
     for type_slug, type_label in PROPERTY_TYPES:
         category_url = f"{BASE_URL}/{type_slug}/{CITY_SLUG}"
@@ -214,6 +223,9 @@ def main():
             listings = scrape_district(district_url, district_name, type_label)
             print(f"    إجمالي: {len(listings)} إعلان")
             type_results.extend(listings)
+            if quick_debug:
+                print("###### توقف تلقائي (وضع تشخيص سريع) ######")
+                return
 
         print(f"إجمالي {type_label}: {len(type_results)} إعلان")
         all_results.extend(type_results)
