@@ -148,14 +148,26 @@ def scrape_district(district_url, district_name, type_label):
         page_url = district_url if page_num == 1 else f"{district_url}/{page_num}"
         html = fetch_html(page_url)
         if not html:
+            print(f"    صفحة {page_num}: فشل الجلب (fetch_html رجّع None)")
             break
 
         soup = BeautifulSoup(html, "html.parser")
+        all_page_links = soup.select("a[href]")
+
         listing_links = set()
-        for a in soup.select("a[href]"):
+        for a in all_page_links:
             href = urljoin(BASE_URL, a["href"])
-            if district_url in href and re.search(r"-\d{6,}/?$", href):
+            # شرط أخف: أي رابط بالمدينة المنورة ينتهي برقم طويل (رقم إعلان)
+            # -- مو شرط احتواء رابط الحي بالضبط (كان صارم زيادة)
+            if "المدينة-المنورة" in href and re.search(r"-\d{6,}/?$", href):
                 listing_links.add(href)
+
+        if page_num == 1 and not listing_links:
+            # تشخيص: نوري عينة روابط حقيقية من الصفحة عشان نفهم شكلها الفعلي
+            print(f"    [تشخيص] إجمالي روابط بالصفحة: {len(all_page_links)}")
+            sample_hrefs = [urljoin(BASE_URL, a["href"]) for a in all_page_links[:15]]
+            for h in sample_hrefs:
+                print(f"    [تشخيص] رابط: {h}")
 
         if not listing_links:
             break
