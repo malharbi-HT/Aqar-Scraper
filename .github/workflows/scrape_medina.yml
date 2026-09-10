@@ -1,7 +1,7 @@
-name: Scrape Medina Sale Listings
+name: Scrape Medina All Property Types
 
 on:
-  workflow_dispatch:   # تشغيل يدوي -- سحب شقق المدينة المنورة للبيع
+  workflow_dispatch:   # تشغيل يدوي -- سحب كل أنواع العقارات للبيع بالمدينة المنورة (شقق، أراضي، دور، فلل، عمائر، مكاتب، محلات، مستودعات، مصانع)
 
 jobs:
   scrape:
@@ -17,8 +17,8 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add data/listings_sale_medina.csv
-          git commit -m "Scrape Medina sale listings" || echo "No changes"
+          git add data/listings_sale_medina_all_types.csv
+          git commit -m "Scrape Medina all property types" || echo "No changes"
           for i in 1 2 3 4 5; do
             git pull --rebase origin main && git push && break
             sleep 5
