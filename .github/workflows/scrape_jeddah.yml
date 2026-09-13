@@ -1,0 +1,25 @@
+name: Scrape Jeddah All Property Types
+
+on:
+  workflow_dispatch:   # تشغيل يدوي -- سحب كل أنواع العقارات للبيع بجدة
+
+jobs:
+  scrape:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: pip install requests beautifulsoup4 lxml
+      - run: python scraper_sale_jeddah.py
+      - name: Commit result
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add data/listings_sale_jeddah_all_types.csv
+          git commit -m "Scrape Jeddah all property types" || echo "No changes"
+          for i in 1 2 3 4 5; do
+            git pull --rebase origin main && git push && break
+            sleep 5
+          done
