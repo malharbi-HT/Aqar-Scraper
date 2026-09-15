@@ -23,6 +23,8 @@ BASE_URL = "https://sa.aqar.fm"
 CITY_SLUG = "المدينة-المنورة"
 
 # كل الأنواع المؤكدة (سلاج الرابط، التسمية العربية)
+import sys
+
 PROPERTY_TYPES = [
     ("شقق-للبيع", "شقة"),
     ("أراضي-للبيع", "أرض"),
@@ -35,7 +37,23 @@ PROPERTY_TYPES = [
     ("مصانع-للبيع", "مصنع"),
 ]
 
+TYPE_ARG = None
+CHUNK_ARG = None  # صيغة "0/3" أو "1/3" أو "2/3" -- يقسّم الأحياء المكتشفة لأجزاء متوازية
+if len(sys.argv) > 1:
+    TYPE_ARG = sys.argv[1]
+    matching = [t for t in PROPERTY_TYPES if t[0] == TYPE_ARG]
+    if not matching:
+        print(f"خطأ: نوع غير معروف '{TYPE_ARG}'. الأنواع المتاحة: {[t[0] for t in PROPERTY_TYPES]}")
+        sys.exit(1)
+    PROPERTY_TYPES = matching
+    print(f"تشغيل مقتصر على نوع: {TYPE_ARG}")
+
+if len(sys.argv) > 2 and sys.argv[2]:
+    CHUNK_ARG = sys.argv[2]
+    print(f"تشغيل مقتصر على جزء: {CHUNK_ARG}")
+
 MAX_PAGES_PER_CATEGORY = 200
+MAX_LISTINGS_PER_RUN = 600
 
 FORBIDDEN_PATH_PREFIXES = [
     "/contact-us", "/اتصل-بنا", "/معلومات-المعلن", "/contact_user",
@@ -55,6 +73,13 @@ HEADERS = {
 
 DATA_DIR = os.path.join(os.path.dirname(__file__), "data")
 OUTPUT_CSV = os.path.join(DATA_DIR, "listings_sale_medina_all_types.csv")
+if TYPE_ARG:
+    safe_type = TYPE_ARG.replace("-", "_")
+    if CHUNK_ARG:
+        safe_chunk = CHUNK_ARG.replace("/", "_")
+        OUTPUT_CSV = os.path.join(DATA_DIR, "medina_by_type", f"listings_medina_{safe_type}_{safe_chunk}.csv")
+    else:
+        OUTPUT_CSV = os.path.join(DATA_DIR, "medina_by_type", f"listings_medina_{safe_type}.csv")
 
 CSV_FIELDS = [
     "listing_id", "url", "title", "price", "area_sqm",
@@ -353,6 +378,16 @@ def main():
             print(f"  ما لقينا أي حي لنوع {type_label} -- تخطّينا")
             continue
 
+        # تقسيم الأحياء لأجزاء متوازية (لو CHUNK_ARG محدد) -- ترتيب ثابت
+        # (بالاسم) عشان نفس الحي يروح لنفس الجزء دائمًا بكل تشغيلة
+        if CHUNK_ARG:
+            chunk_index, chunk_total = map(int, CHUNK_ARG.split("/"))
+            sorted_items = sorted(districts.items(), key=lambda x: x[1])
+            districts = dict(
+                item for i, item in enumerate(sorted_items) if i % chunk_total == chunk_index
+            )
+            print(f"  بعد التقسيم (جزء {chunk_index}/{chunk_total}): {len(districts)} حي")
+
         for district_url, district_name in districts.items():
             print(f"  --- حي: {district_name} ---")
             for page_num in range(1, MAX_PAGES_PER_CATEGORY + 1):
@@ -375,7 +410,12 @@ def main():
             time.sleep(2)
 
     new_links = [(url, t) for url, t in all_links_with_type.items() if extract_listing_id(url) not in existing_ids]
-    print(f"\nروابط جديدة للسحب: {len(new_links)}")
+    total_pending = len(new_links)
+    if total_pending > MAX_LISTINGS_PER_RUN:
+        print(f"تنبيه: {total_pending} رابط جديد، بس نقتصر على {MAX_LISTINGS_PER_RUN} بهالتشغيلة")
+        print(f"الباقي ({total_pending - MAX_LISTINGS_PER_RUN}) بيكمل تلقائيًا بالتشغيلة الجاية")
+        new_links = new_links[:MAX_LISTINGS_PER_RUN]
+    print(f"روابط للسحب بهالتشغيلة: {len(new_links)}")
 
     f, writer = open_csv_writer()
     saved_count = 0
