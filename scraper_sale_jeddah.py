@@ -22,6 +22,8 @@ from urllib.parse import urljoin, unquote
 BASE_URL = "https://sa.aqar.fm"
 CITY_SLUG = "جدة"
 
+import sys
+
 PROPERTY_TYPES = [
     ("شقق-للبيع", "شقة"),
     ("أراضي-للبيع", "أرض"),
@@ -34,7 +36,29 @@ PROPERTY_TYPES = [
     ("مصانع-للبيع", "مصنع"),
 ]
 
+# لو مرّرنا اسم نوع بسطر الأوامر (زي "فلل-للبيع")، نقتصر عليه بس -- يسمح
+# بتشغيل كل نوع بمهمة GitHub Actions منفصلة بالتوازي، يقلل وقت كل تشغيلة
+TYPE_ARG = None
+REGION_ARG = None  # اسم منطقة (مثال: "شمال-جدة") -- اختياري، لتقسيم النوع الوحد لمهام أصغر
+if len(sys.argv) > 1:
+    TYPE_ARG = sys.argv[1]
+    matching = [t for t in PROPERTY_TYPES if t[0] == TYPE_ARG]
+    if not matching:
+        print(f"خطأ: نوع غير معروف '{TYPE_ARG}'. الأنواع المتاحة: {[t[0] for t in PROPERTY_TYPES]}")
+        sys.exit(1)
+    PROPERTY_TYPES = matching
+    print(f"تشغيل مقتصر على نوع: {TYPE_ARG}")
+
+if len(sys.argv) > 2:
+    REGION_ARG = sys.argv[2]
+    print(f"تشغيل مقتصر على منطقة: {REGION_ARG}")
+
 MAX_PAGES_PER_CATEGORY = 200
+# حد أقصى لعدد صفحات التفاصيل نفصّلها بكل تشغيلة -- يمنع تجاوز حد الـ6
+# ساعات بـGitHub Actions لأنواع ضخمة (زي شقق جدة، عشرات الآلاف). السكربت
+# يحفظ تدريجيًا ويتخطى المكرر (existing_ids)، فإعادة تشغيل نفس الـWorkflow
+# عدة مرات يكمّل الباقي تلقائيًا لحد ما يخلص كل شي
+MAX_LISTINGS_PER_RUN = 600
 
 FORBIDDEN_PATH_PREFIXES = [
     "/contact-us", "/اتصل-بنا", "/معلومات-المعلن", "/contact_user",
@@ -54,6 +78,13 @@ HEADERS = {
 
 DATA_DIR = os.path.join(os.path.dirname(__file__), "data")
 OUTPUT_CSV = os.path.join(DATA_DIR, "listings_sale_jeddah_all_types.csv")
+if TYPE_ARG:
+    safe_type = TYPE_ARG.replace("-", "_")
+    if REGION_ARG:
+        safe_region = REGION_ARG.replace("-", "_")
+        OUTPUT_CSV = os.path.join(DATA_DIR, "jeddah_by_type", f"listings_jeddah_{safe_type}_{safe_region}.csv")
+    else:
+        OUTPUT_CSV = os.path.join(DATA_DIR, "jeddah_by_type", f"listings_jeddah_{safe_type}.csv")
 
 CSV_FIELDS = [
     "listing_id", "url", "title", "price", "area_sqm",
@@ -347,12 +378,18 @@ def main():
 
         # المستوى 1: نكتشف المناطق من صفحة المدينة (شمال جدة، جنوب جدة...)
         regions = discover_sublinks(city_url)
+        if REGION_ARG:
+            regions = {url: name for url, name in regions.items() if REGION_ARG in url}
         print(f"لقينا {len(regions)} منطقة: {list(regions.values())}")
         if not regions:
-            print(f"  ما لقينا أي منطقة لنوع {type_label} -- تخطّينا")
+            print(f"  ما لقينا أي منطقة لنوع {type_label} (فلتر منطقة: {REGION_ARG}) -- تخطّينا")
             continue
 
+        enough_found = False  # علم نوقف بيه كل الحلقات المتداخلة فورًا
+
         for region_url, region_name in regions.items():
+            if enough_found:
+                break
             print(f"\n== منطقة: {region_name} ==")
 
             # المستوى 2: نكتشف الأحياء داخل كل منطقة
@@ -360,6 +397,8 @@ def main():
             print(f"  لقينا {len(districts)} حي")
 
             for district_url, district_name in districts.items():
+                if enough_found:
+                    break
                 print(f"  --- حي: {district_name} ---")
                 for page_num in range(1, MAX_PAGES_PER_CATEGORY + 1):
                     page_url = district_url if page_num == 1 else f"{district_url}/{page_num}"
@@ -377,10 +416,27 @@ def main():
                     for link in links:
                         all_links_with_type[link] = type_label
 
+                    # توقف مبكر: بمجرد ما نجمع روابط جديدة كافية (هامش أمان
+                    # 1.5x) لتشغيلة وحدة، نوقف الاكتشاف نفسه فورًا -- ما
+                    # فايدة نكمل نمسح آلاف الصفحات الباقية وإحنا أصلاً
+                    # بنكتفي بـMAX_LISTINGS_PER_RUN منها بس بمرحلة السحب
+                    total_new_so_far = sum(
+                        1 for u in all_links_with_type if extract_listing_id(u) not in existing_ids
+                    )
+                    if total_new_so_far >= int(MAX_LISTINGS_PER_RUN * 1.5):
+                        print(f"    لقينا {total_new_so_far} رابط جديد -- كافي لهالتشغيلة، نوقف الاكتشاف")
+                        enough_found = True
+                        break
+
                     time.sleep(2)
                 time.sleep(2)
 
     new_links = [(url, t) for url, t in all_links_with_type.items() if extract_listing_id(url) not in existing_ids]
+    total_pending = len(new_links)
+    if total_pending > MAX_LISTINGS_PER_RUN:
+        print(f"تنبيه: {total_pending} رابط جديد، بس نقتصر على {MAX_LISTINGS_PER_RUN} بهالتشغيلة")
+        print(f"الباقي ({total_pending - MAX_LISTINGS_PER_RUN}) بيكمل تلقائيًا بالتشغيلة الجاية")
+        new_links = new_links[:MAX_LISTINGS_PER_RUN]
     print(f"\nروابط جديدة للسحب: {len(new_links)}")
 
     f, writer = open_csv_writer()
