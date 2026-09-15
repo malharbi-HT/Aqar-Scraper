@@ -1,24 +1,142 @@
-name: Scrape Jeddah All Property Types
+name: Scrape Medina + Jeddah (Parallel by Type + Region)
 
 on:
-  workflow_dispatch:   # تشغيل يدوي -- سحب كل أنواع العقارات للبيع بجدة
+  schedule:
+    - cron: '0 */5 * * *'   # كل 5 ساعات -- يكمّل الباقي تدريجيًا
+  workflow_dispatch:
 
 jobs:
   scrape:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # المدينة المنورة -- 9 مهام (نوع بس، ما تحتاج تقسيم مناطق)
+          - city: medina
+            property_type: شقق-للبيع
+          - city: medina
+            property_type: أراضي-للبيع
+          - city: medina
+            property_type: دور-للبيع
+          - city: medina
+            property_type: فلل-للبيع
+          - city: medina
+            property_type: عمائر-للبيع
+          - city: medina
+            property_type: مكاتب-للبيع
+          - city: medina
+            property_type: محلات-للبيع
+          - city: medina
+            property_type: مستودعات-للبيع
+          - city: medina
+            property_type: مصانع-للبيع
+          # جدة -- 18 مهمة (9 أنواع × منطقتين: شمال/جنوب)
+          - city: jeddah
+            property_type: شقق-للبيع
+            region: شمال-جدة
+          - city: jeddah
+            property_type: شقق-للبيع
+            region: جنوب-جدة
+          - city: jeddah
+            property_type: أراضي-للبيع
+            region: شمال-جدة
+          - city: jeddah
+            property_type: أراضي-للبيع
+            region: جنوب-جدة
+          - city: jeddah
+            property_type: دور-للبيع
+            region: شمال-جدة
+          - city: jeddah
+            property_type: دور-للبيع
+            region: جنوب-جدة
+          - city: jeddah
+            property_type: فلل-للبيع
+            region: شمال-جدة
+          - city: jeddah
+            property_type: فلل-للبيع
+            region: جنوب-جدة
+          - city: jeddah
+            property_type: عمائر-للبيع
+            region: شمال-جدة
+          - city: jeddah
+            property_type: عمائر-للبيع
+            region: جنوب-جدة
+          - city: jeddah
+            property_type: مكاتب-للبيع
+            region: شمال-جدة
+          - city: jeddah
+            property_type: مكاتب-للبيع
+            region: جنوب-جدة
+          - city: jeddah
+            property_type: محلات-للبيع
+            region: شمال-جدة
+          - city: jeddah
+            property_type: محلات-للبيع
+            region: جنوب-جدة
+          - city: jeddah
+            property_type: مستودعات-للبيع
+            region: شمال-جدة
+          - city: jeddah
+            property_type: مستودعات-للبيع
+            region: جنوب-جدة
+          - city: jeddah
+            property_type: مصانع-للبيع
+            region: شمال-جدة
+          - city: jeddah
+            property_type: مصانع-للبيع
+            region: جنوب-جدة
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
       - run: pip install requests beautifulsoup4 lxml
-      - run: python scraper_sale_jeddah.py
+      - name: Scrape ${{ matrix.city }} - ${{ matrix.property_type }} ${{ matrix.region }}
+        run: python scraper_sale_${{ matrix.city }}.py "${{ matrix.property_type }}" "${{ matrix.region }}"
       - name: Commit result
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add data/listings_sale_jeddah_all_types.csv
-          git commit -m "Scrape Jeddah all property types" || echo "No changes"
+          git add data/
+          git commit -m "Scrape ${{ matrix.city }} - ${{ matrix.property_type }} ${{ matrix.region }}" || echo "No changes"
+          for i in 1 2 3 4 5; do
+            git pull --rebase origin main && git push && break
+            sleep 5
+          done
+
+  merge:
+    needs: scrape
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: pip install pandas
+      - name: Merge all type files into one per city
+        run: |
+          python3 << 'PYEOF'
+          import pandas as pd
+          import glob
+
+          for city in ["medina", "jeddah"]:
+              files = glob.glob(f"data/{city}_by_type/listings_{city}_*.csv")
+              if not files:
+                  print(f"{city}: ما لقينا أي ملفات")
+                  continue
+              dfs = [pd.read_csv(f, encoding="utf-8-sig") for f in files]
+              combined = pd.concat(dfs, ignore_index=True)
+              out_path = f"data/listings_sale_{city}_all_types.csv"
+              combined.to_csv(out_path, index=False, encoding="utf-8-sig")
+              print(f"{city}: دمجنا {len(files)} ملف -> {len(combined)} إعلان -> {out_path}")
+          PYEOF
+      - name: Commit merged files
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add data/listings_sale_medina_all_types.csv data/listings_sale_jeddah_all_types.csv
+          git commit -m "Merge Medina + Jeddah type files" || echo "No changes"
           for i in 1 2 3 4 5; do
             git pull --rebase origin main && git push && break
             sleep 5
