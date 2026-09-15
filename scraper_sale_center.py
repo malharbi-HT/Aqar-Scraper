@@ -1,9 +1,13 @@
 """
-سكربت سحب بيانات العقارات من aqar.fm
-- يسحب صفحات القوائم (listing pages) لاستخراج روابط الإعلانات
-- يفتح كل إعلان ويحاول استخراج البيانات الكاملة (بما فيها الصور والإحداثيات)
-  عبر قراءة الـ JSON المضمّن بالصفحة (__NEXT_DATA__) إن وجد، وإلا يرجع لـ HTML parsing
-- يحفظ النتائج بملف CSV، ويتجنب تكرار الإعلانات (dedupe حسب رقم الإعلان الفريد)
+سكربت سحب كل أنواع العقارات للبيع بجدة -- مبني بالضبط على نفس منطق سكربت
+الدور الحقيقي المُثبت بالمشروع (scraper_floor.py)، لأن هذا هو المنطق اللي
+فعليًا يشتغل مع aqar.fm (استخراج JSON مضمّن بالصفحة عبر Next.js RSC).
+
+الفرق عن المدينة المنورة: جدة فيها تقسيم مناطق زي الرياض بالضبط (شمال
+جدة، جنوب جدة...) -- تأكدنا من كذا "شمال جدة (19,370) جنوب جدة (726)"
+بالبحث المباشر. فبدل ما نخمّن أسماء المناطق، نكتشفها تلقائيًا من صفحة
+المدينة نفسها (بنفس دالة discover_districts، مستخدمة مرتين: مرة تكتشف
+المناطق من صفحة المدينة، ومرة ثانية تكتشف الأحياء داخل كل منطقة).
 """
 
 import requests
@@ -16,16 +20,46 @@ import os
 from urllib.parse import urljoin, unquote
 
 BASE_URL = "https://sa.aqar.fm"
+CITY_SLUG = "جدة"
 
-# ==== عدّل هذي القائمة حسب احتياجك (مدينة/نوع عقار/عدد صفحات) ====
-# نسحب منطقة وحدة كاملة بكل مرة عشان نتحكم بالوقت والموارد.
-# بعد ما تخلص شمال الرياض، غيّر الرابط التالي لمنطقة ثانية (شرق-الرياض، غرب-الرياض...)
-LIST_PAGES = [
-    "https://sa.aqar.fm/شقق-للبيع/الرياض/وسط-الرياض",
+import sys
+
+PROPERTY_TYPES = [
+    ("شقق-للبيع", "شقة"),
+    ("أراضي-للبيع", "أرض"),
+    ("دور-للبيع", "دور"),
+    ("فلل-للبيع", "فيلا"),
+    ("عمائر-للبيع", "عمارة"),
+    ("مكاتب-للبيع", "مكتب"),
+    ("محلات-للبيع", "محل"),
+    ("مستودعات-للبيع", "مستودع"),
+    ("مصانع-للبيع", "مصنع"),
 ]
-MAX_PAGES_PER_CATEGORY = 200   # سقف أعلى من الحاجة الفعلية؛ السكربت يتوقف تلقائيًا عند آخر صفحة فعلية
 
-# مسارات محظورة صراحة بـ robots.txt -- لازم نتجنبها دائمًا
+# لو مرّرنا اسم نوع بسطر الأوامر (زي "فلل-للبيع")، نقتصر عليه بس -- يسمح
+# بتشغيل كل نوع بمهمة GitHub Actions منفصلة بالتوازي، يقلل وقت كل تشغيلة
+TYPE_ARG = None
+REGION_ARG = None  # اسم منطقة (مثال: "شمال-جدة") -- اختياري، لتقسيم النوع الوحد لمهام أصغر
+if len(sys.argv) > 1:
+    TYPE_ARG = sys.argv[1]
+    matching = [t for t in PROPERTY_TYPES if t[0] == TYPE_ARG]
+    if not matching:
+        print(f"خطأ: نوع غير معروف '{TYPE_ARG}'. الأنواع المتاحة: {[t[0] for t in PROPERTY_TYPES]}")
+        sys.exit(1)
+    PROPERTY_TYPES = matching
+    print(f"تشغيل مقتصر على نوع: {TYPE_ARG}")
+
+if len(sys.argv) > 2:
+    REGION_ARG = sys.argv[2]
+    print(f"تشغيل مقتصر على منطقة: {REGION_ARG}")
+
+MAX_PAGES_PER_CATEGORY = 200
+# حد أقصى لعدد صفحات التفاصيل نفصّلها بكل تشغيلة -- يمنع تجاوز حد الـ6
+# ساعات بـGitHub Actions لأنواع ضخمة (زي شقق جدة، عشرات الآلاف). السكربت
+# يحفظ تدريجيًا ويتخطى المكرر (existing_ids)، فإعادة تشغيل نفس الـWorkflow
+# عدة مرات يكمّل الباقي تلقائيًا لحد ما يخلص كل شي
+MAX_LISTINGS_PER_RUN = 600
+
 FORBIDDEN_PATH_PREFIXES = [
     "/contact-us", "/اتصل-بنا", "/معلومات-المعلن", "/contact_user",
     "/send_iphone", "/send_android", "/download_app",
@@ -43,7 +77,14 @@ HEADERS = {
 }
 
 DATA_DIR = os.path.join(os.path.dirname(__file__), "data")
-OUTPUT_CSV = os.path.join(DATA_DIR, "listings_sale_center.csv")
+OUTPUT_CSV = os.path.join(DATA_DIR, "listings_sale_jeddah_all_types.csv")
+if TYPE_ARG:
+    safe_type = TYPE_ARG.replace("-", "_")
+    if REGION_ARG:
+        safe_region = REGION_ARG.replace("-", "_")
+        OUTPUT_CSV = os.path.join(DATA_DIR, "jeddah_by_type", f"listings_jeddah_{safe_type}_{safe_region}.csv")
+    else:
+        OUTPUT_CSV = os.path.join(DATA_DIR, "jeddah_by_type", f"listings_jeddah_{safe_type}.csv")
 
 CSV_FIELDS = [
     "listing_id", "url", "title", "price", "area_sqm",
@@ -51,6 +92,7 @@ CSV_FIELDS = [
     "description", "latitude", "longitude", "images", "images_count",
     "advertiser_name", "advertiser_company", "advertiser_type",
     "created_at", "published_at", "last_update", "views", "date_scraped",
+    "published", "price_text", "price_was_missing", "property_type",
 ]
 
 IMAGE_BASE_URL = "https://images.aqar.fm/webp/750x0/props/"
@@ -61,8 +103,6 @@ def is_forbidden(path: str) -> bool:
 
 
 def parse_city_direction_from_url(url):
-    """يستخرج اسم المدينة والاتجاه من مسار الرابط نفسه (أوثق من الـ JSON).
-    مثال: /شقق-للبيع/الرياض/شمال-الرياض/حي-الياسمين/... -> (الرياض, شمال الرياض)"""
     path = unquote(url.replace(BASE_URL, "")).strip("/")
     parts = path.split("/")
     city = parts[1].replace("-", " ") if len(parts) > 1 else None
@@ -71,14 +111,13 @@ def parse_city_direction_from_url(url):
 
 
 def extract_listing_id(url: str) -> str:
-    """الرقم التعريفي دائمًا آخر أرقام بنهاية الرابط"""
     match = re.search(r"-(\d+)/?$", url)
     return match.group(1) if match else url
 
 
 def get_soup(url: str):
     last_error = None
-    for attempt in range(1, 4):  # 3 محاولات قبل ما نستسلم فعليًا
+    for attempt in range(1, 4):
         try:
             resp = requests.get(url, headers=HEADERS, timeout=20)
             resp.raise_for_status()
@@ -86,7 +125,7 @@ def get_soup(url: str):
         except requests.RequestException as e:
             last_error = e
             if attempt < 3:
-                time.sleep(3 * attempt)  # تأخير متصاعد بين المحاولات (3، 6 ثواني)
+                time.sleep(3 * attempt)
     raise last_error
 
 
@@ -94,12 +133,10 @@ NEXT_F_PATTERN = re.compile(r'self\.__next_f\.push\(\[1,"((?:[^"\\]|\\.)*)"\]\)'
 
 
 def _unescape_js_string(raw):
-    """يفك ترميز نص JS المهرّب (يستخدم نفس قواعد تهريب JSON)."""
     return json.loads('"' + raw + '"')
 
 
 def extract_rsc_text(html):
-    """يجمع كل أجزاء self.__next_f.push(...) بالصفحة في نص واحد مفكوك الترميز."""
     parts = []
     for m in NEXT_F_PATTERN.finditer(html):
         try:
@@ -109,43 +146,7 @@ def extract_rsc_text(html):
     return "".join(parts)
 
 
-def extract_balanced_json(text, anchor):
-    """يستخرج كائن JSON متوازن الأقواس يبدأ بعد أول '{' تالي لـ anchor."""
-    idx = text.find(anchor)
-    if idx == -1:
-        return None
-    start = text.find("{", idx)
-    if start == -1:
-        return None
-    depth = 0
-    in_string = False
-    escape = False
-    i = start
-    while i < len(text):
-        c = text[i]
-        if in_string:
-            if escape:
-                escape = False
-            elif c == "\\":
-                escape = True
-            elif c == '"':
-                in_string = False
-        else:
-            if c == '"':
-                in_string = True
-            elif c == "{":
-                depth += 1
-            elif c == "}":
-                depth -= 1
-                if depth == 0:
-                    return text[start:i + 1]
-        i += 1
-    return None
-
-
 def resolve_text_reference(rsc_text, ref):
-    """يحل مرجع نصي بصيغة '$52' يشير لجزء نص منفصل بالصيغة 'ID:Thex_len,النص'.
-    الطول مكتوب بالنظام السداسي عشري ويمثل عدد البايتات (UTF-8) لا عدد الأحرف."""
     m = re.match(r"^\$(\d+)$", ref or "")
     if not m:
         return ref
@@ -167,38 +168,7 @@ def resolve_text_reference(rsc_text, ref):
         return None
 
 
-def extract_listing_json(html):
-    """يستخرج كائن 'listing' الصحيح (بيانات العقار) من بيانات RSC المضمّنة بالصفحة،
-    وترجع أيضًا نص RSC الكامل (لازم لحل أي مراجع نصية طويلة مثل '$52').
-    الصفحة قد تحتوي أكثر من كائن اسمه 'listing' (مثلاً قاموس ترجمة الواجهة)،
-    فنفحص كل المطابقات ونختار اللي فيه حقول بيانات العقار الفعلية.
-    ترجع (listing_dict, rsc_text) أو (None, rsc_text)."""
-    rsc_text = extract_rsc_text(html)
-    if not rsc_text:
-        return None, ""
-
-    search_from = 0
-    while True:
-        idx = rsc_text.find('"listing":{', search_from)
-        if idx == -1:
-            return None, rsc_text
-        start = rsc_text.find("{", idx)
-        candidate = _extract_balanced_from(rsc_text, start)
-        if candidate:
-            try:
-                parsed = json.loads(candidate)
-                # كائن بيانات العقار الحقيقي فيه هذي الحقول، عكس قاموس الترجمة
-                if isinstance(parsed, dict) and (
-                    "price" in parsed or "imgs" in parsed or "rega_total_price" in parsed
-                ):
-                    return parsed, rsc_text
-            except json.JSONDecodeError:
-                pass
-        search_from = idx + 1
-
-
 def _extract_balanced_from(text, start):
-    """نفس منطق extract_balanced_json لكن يبدأ من موضع '{' معروف مباشرة."""
     if start == -1:
         return None
     depth = 0
@@ -227,8 +197,31 @@ def _extract_balanced_from(text, start):
     return None
 
 
+def extract_listing_json(html):
+    rsc_text = extract_rsc_text(html)
+    if not rsc_text:
+        return None, ""
+
+    search_from = 0
+    while True:
+        idx = rsc_text.find('"listing":{', search_from)
+        if idx == -1:
+            return None, rsc_text
+        start = rsc_text.find("{", idx)
+        candidate = _extract_balanced_from(rsc_text, start)
+        if candidate:
+            try:
+                parsed = json.loads(candidate)
+                if isinstance(parsed, dict) and (
+                    "price" in parsed or "imgs" in parsed or "rega_total_price" in parsed
+                ):
+                    return parsed, rsc_text
+            except json.JSONDecodeError:
+                pass
+        search_from = idx + 1
+
+
 def collect_listing_links_from_list_page(url: str):
-    """يسحب صفحة قائمة ويرجع روابط الإعلانات + بيانات أساسية سريعة"""
     soup = get_soup(url)
     links = set()
     for a in soup.select("a[href]"):
@@ -237,14 +230,12 @@ def collect_listing_links_from_list_page(url: str):
         path = full.replace(BASE_URL, "")
         if is_forbidden(path):
             continue
-        # روابط الإعلانات تنتهي برقم تعريفي طويل
         if re.search(r"-\d{5,}/?$", full):
             links.add(full)
     return links
 
 
 def _fmt_timestamp(ts):
-    """يحول unix timestamp إلى تاريخ مقروء YYYY-MM-DD، أو يرجع فاضي لو غير موجود."""
     if not ts:
         return None
     try:
@@ -253,8 +244,7 @@ def _fmt_timestamp(ts):
         return None
 
 
-def scrape_listing_detail(url):
-    """يفتح صفحة إعلان مفرد ويستخرج كل بياناته من JSON المضمّن بالصفحة (RSC)."""
+def scrape_listing_detail(url, type_label):
     resp = requests.get(url, headers=HEADERS, timeout=15)
     resp.raise_for_status()
     html = resp.text
@@ -270,6 +260,7 @@ def scrape_listing_detail(url):
         "advertiser_name": None, "advertiser_company": None, "advertiser_type": None,
         "created_at": None, "published_at": None, "last_update": None,
         "views": None, "date_scraped": time.strftime("%Y-%m-%d"),
+        "property_type": type_label,
     }
 
     listing, rsc_text = extract_listing_json(html)
@@ -277,6 +268,9 @@ def scrape_listing_detail(url):
     if listing:
         data["title"] = listing.get("title")
         data["price"] = listing.get("price") or listing.get("rega_total_price")
+        data["published"] = listing.get("published")
+        data["price_text"] = listing.get("price_text")
+        data["price_was_missing"] = listing.get("price") is None
         data["area_sqm"] = listing.get("area")
         data["rooms"] = listing.get("beds")
         data["bathrooms"] = listing.get("wc")
@@ -311,8 +305,6 @@ def scrape_listing_detail(url):
         data["last_update"] = _fmt_timestamp(listing.get("last_update"))
         data["views"] = listing.get("views")
 
-    # --- خطة احتياطية: لو فشل استخراج الـ JSON بالكامل، نرجع لـ meta tags ---
-    # city/direction تُستخرج دائمًا من الرابط، بغض النظر عن نجاح تحليل JSON
     data["city"], data["direction"] = parse_city_direction_from_url(url)
 
     if not listing:
@@ -331,6 +323,30 @@ def scrape_listing_detail(url):
     return data
 
 
+def discover_sublinks(parent_url):
+    """يجيب كل الروابط الفرعية مباشرة تحت رابط معيّن -- دالة عامة نستخدمها
+    مرتين: مرة نكتشف المناطق من صفحة المدينة، ومرة ثانية نكتشف الأحياء من
+    صفحة المنطقة (نفس منطق discover_districts بسكربت الدور الأصلي)"""
+    try:
+        soup = get_soup(parent_url)
+    except Exception as e:
+        print(f"فشل جلب {parent_url}: {e}")
+        return {}
+
+    sublinks = {}
+    for a in soup.select("a[href]"):
+        href = a["href"]
+        full = urljoin(BASE_URL, href)
+        if not full.startswith(parent_url + "/"):
+            continue
+        tail = full[len(parent_url) + 1:]
+        if "/" in tail or re.search(r"-\d{4,}$", tail):
+            continue
+        sublinks[full] = a.get_text(strip=True)
+
+    return sublinks
+
+
 def load_existing_ids():
     if not os.path.exists(OUTPUT_CSV):
         return set()
@@ -339,21 +355,8 @@ def load_existing_ids():
         return {row["listing_id"] for row in reader}
 
 
-def append_rows(rows):
-    """يُبقى للتوافق، لكن الحفظ الفعلي الآن تدريجي عبر append_row"""
-    os.makedirs(DATA_DIR, exist_ok=True)
-    file_exists = os.path.exists(OUTPUT_CSV)
-    with open(OUTPUT_CSV, "a", newline="", encoding="utf-8-sig") as f:
-        writer = csv.DictWriter(f, fieldnames=CSV_FIELDS)
-        if not file_exists:
-            writer.writeheader()
-        writer.writerows(rows)
-
-
 def open_csv_writer():
-    """يفتح ملف CSV بوضع الإضافة، ويكتب العنوان لو الملف جديد.
-    يرجع (file_handle, writer) — لازم تسكر الملف يدويًا بنهاية الاستخدام."""
-    os.makedirs(DATA_DIR, exist_ok=True)
+    os.makedirs(os.path.dirname(OUTPUT_CSV), exist_ok=True)
     file_exists = os.path.exists(OUTPUT_CSV)
     f = open(OUTPUT_CSV, "a", newline="", encoding="utf-8-sig")
     writer = csv.DictWriter(f, fieldnames=CSV_FIELDS)
@@ -367,51 +370,77 @@ def main():
     existing_ids = load_existing_ids()
     print(f"عدد الإعلانات المحفوظة مسبقًا: {len(existing_ids)}")
 
-    all_links = set()
-    for base in LIST_PAGES:
-        print(f"=== تصنيف: {base} ===")
-        for page_num in range(1, MAX_PAGES_PER_CATEGORY + 1):
-            page_url = base if page_num == 1 else f"{base}/{page_num}"
-            try:
-                links = collect_listing_links_from_list_page(page_url)
-            except requests.RequestException as e:
-                print(f"تخطي {page_url}: {e}")
-                continue
-            if not links:
-                print(f"وصلنا آخر صفحة عند صفحة {page_num - 1}، ننتقل للتصنيف التالي")
-                break  # وصلنا آخر صفحة متاحة لهذا التصنيف
+    all_links_with_type = {}
 
-            new_on_page = [l for l in links if extract_listing_id(l) not in existing_ids]
-            print(f"صفحة {page_num}: لقيت {len(links)} رابط ({len(new_on_page)} جديد، إجمالي حتى الآن: {len(all_links) + len(links)})")
-            all_links.update(links)
+    for type_slug, type_label in PROPERTY_TYPES:
+        city_url = f"{BASE_URL}/{type_slug}/{CITY_SLUG}"
+        print(f"\n{'='*50}\nنوع العقار: {type_label} ({type_slug})\n{'='*50}")
 
-            time.sleep(2)  # احترام السيرفر
+        # المستوى 1: نكتشف المناطق من صفحة المدينة (شمال جدة، جنوب جدة...)
+        regions = discover_sublinks(city_url)
+        if REGION_ARG:
+            regions = {url: name for url, name in regions.items() if REGION_ARG in url}
+        print(f"لقينا {len(regions)} منطقة: {list(regions.values())}")
+        if not regions:
+            print(f"  ما لقينا أي منطقة لنوع {type_label} (فلتر منطقة: {REGION_ARG}) -- تخطّينا")
+            continue
 
-    new_links = [l for l in all_links if extract_listing_id(l) not in existing_ids]
-    print(f"روابط جديدة للسحب: {len(new_links)}")
+        for region_url, region_name in regions.items():
+            print(f"\n== منطقة: {region_name} ==")
 
-    # --- حفظ تدريجي: كل إعلان يُكتب بالملف فور سحبه، مو مجمّع بالنهاية ---
-    # هذا يحمي التقدم لو انقطع التشغيل لأي سبب (بدل ما نخسر كل شي)
+            # المستوى 2: نكتشف الأحياء داخل كل منطقة
+            districts = discover_sublinks(region_url)
+            print(f"  لقينا {len(districts)} حي")
+
+            for district_url, district_name in districts.items():
+                print(f"  --- حي: {district_name} ---")
+                for page_num in range(1, MAX_PAGES_PER_CATEGORY + 1):
+                    page_url = district_url if page_num == 1 else f"{district_url}/{page_num}"
+                    try:
+                        links = collect_listing_links_from_list_page(page_url)
+                    except requests.RequestException as e:
+                        print(f"    تخطي {page_url}: {e}")
+                        continue
+                    if not links:
+                        print(f"    وصلنا آخر صفحة عند صفحة {page_num - 1}")
+                        break
+
+                    new_on_page = [l for l in links if extract_listing_id(l) not in existing_ids]
+                    print(f"    صفحة {page_num}: لقيت {len(links)} رابط ({len(new_on_page)} جديد)")
+                    for link in links:
+                        all_links_with_type[link] = type_label
+
+                    time.sleep(2)
+                time.sleep(2)
+
+    new_links = [(url, t) for url, t in all_links_with_type.items() if extract_listing_id(url) not in existing_ids]
+    total_pending = len(new_links)
+    if total_pending > MAX_LISTINGS_PER_RUN:
+        print(f"تنبيه: {total_pending} رابط جديد، بس نقتصر على {MAX_LISTINGS_PER_RUN} بهالتشغيلة")
+        print(f"الباقي ({total_pending - MAX_LISTINGS_PER_RUN}) بيكمل تلقائيًا بالتشغيلة الجاية")
+        new_links = new_links[:MAX_LISTINGS_PER_RUN]
+    print(f"\nروابط جديدة للسحب: {len(new_links)}")
+
     f, writer = open_csv_writer()
     saved_count = 0
     try:
-        for link in new_links:
+        for link, type_label in new_links:
             try:
-                row = scrape_listing_detail(link)
+                row = scrape_listing_detail(link, type_label)
                 writer.writerow(row)
-                f.flush()  # نضمن الكتابة الفعلية على القرص فورًا
+                f.flush()
                 saved_count += 1
                 print(f"تم ({saved_count}/{len(new_links)}):", row["listing_id"], row.get("title"))
             except requests.RequestException as e:
                 print(f"فشل سحب {link}: {e}")
-            time.sleep(2)  # احترام السيرفر بين الطلبات
+            time.sleep(2)
     finally:
         f.close()
 
     if saved_count:
         print(f"تمت إضافة {saved_count} إعلان جديد إلى {OUTPUT_CSV}")
     else:
-        print("لا توجد إعلانات جديدة اليوم.")
+        print("لا توجد إعلانات جديدة.")
 
 
 if __name__ == "__main__":
