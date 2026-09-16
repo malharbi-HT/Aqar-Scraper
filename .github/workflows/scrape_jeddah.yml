@@ -2,8 +2,12 @@ name: Scrape Medina + Jeddah (Parallel by Type + Region)
 
 on:
   schedule:
-    - cron: '0 */5 * * *'   # كل 5 ساعات -- يكمّل الباقي تدريجيًا
+    - cron: '0 */2 * * *'   # كل ساعتين -- يكمّل الباقي تدريجيًا
   workflow_dispatch:
+
+concurrency:
+  group: scrape-medina-jeddah
+  cancel-in-progress: false   # ما نلغي الشغّالة، بس نمنع تشغيلة ثانية توازيها
 
 jobs:
   scrape:
@@ -12,25 +16,88 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # المدينة المنورة -- 9 مهام (نوع بس، ما تحتاج تقسيم مناطق)
+          # المدينة المنورة -- 27 مهمة (9 أنواع × 3 أجزاء أحياء متوازية)
           - city: medina
             property_type: شقق-للبيع
+            chunk: "0/3"
+          - city: medina
+            property_type: شقق-للبيع
+            chunk: "1/3"
+          - city: medina
+            property_type: شقق-للبيع
+            chunk: "2/3"
           - city: medina
             property_type: أراضي-للبيع
+            chunk: "0/3"
+          - city: medina
+            property_type: أراضي-للبيع
+            chunk: "1/3"
+          - city: medina
+            property_type: أراضي-للبيع
+            chunk: "2/3"
           - city: medina
             property_type: دور-للبيع
+            chunk: "0/3"
+          - city: medina
+            property_type: دور-للبيع
+            chunk: "1/3"
+          - city: medina
+            property_type: دور-للبيع
+            chunk: "2/3"
           - city: medina
             property_type: فلل-للبيع
+            chunk: "0/3"
+          - city: medina
+            property_type: فلل-للبيع
+            chunk: "1/3"
+          - city: medina
+            property_type: فلل-للبيع
+            chunk: "2/3"
           - city: medina
             property_type: عمائر-للبيع
+            chunk: "0/3"
+          - city: medina
+            property_type: عمائر-للبيع
+            chunk: "1/3"
+          - city: medina
+            property_type: عمائر-للبيع
+            chunk: "2/3"
           - city: medina
             property_type: مكاتب-للبيع
+            chunk: "0/3"
+          - city: medina
+            property_type: مكاتب-للبيع
+            chunk: "1/3"
+          - city: medina
+            property_type: مكاتب-للبيع
+            chunk: "2/3"
           - city: medina
             property_type: محلات-للبيع
+            chunk: "0/3"
+          - city: medina
+            property_type: محلات-للبيع
+            chunk: "1/3"
+          - city: medina
+            property_type: محلات-للبيع
+            chunk: "2/3"
           - city: medina
             property_type: مستودعات-للبيع
+            chunk: "0/3"
+          - city: medina
+            property_type: مستودعات-للبيع
+            chunk: "1/3"
+          - city: medina
+            property_type: مستودعات-للبيع
+            chunk: "2/3"
           - city: medina
             property_type: مصانع-للبيع
+            chunk: "0/3"
+          - city: medina
+            property_type: مصانع-للبيع
+            chunk: "1/3"
+          - city: medina
+            property_type: مصانع-للبيع
+            chunk: "2/3"
           # جدة -- 18 مهمة (9 أنواع × منطقتين: شمال/جنوب)
           - city: jeddah
             property_type: شقق-للبيع
@@ -92,14 +159,14 @@ jobs:
         with:
           python-version: '3.11'
       - run: pip install requests beautifulsoup4 lxml
-      - name: Scrape ${{ matrix.city }} - ${{ matrix.property_type }} ${{ matrix.region }}
-        run: python scraper_sale_${{ matrix.city }}.py "${{ matrix.property_type }}" "${{ matrix.region }}"
+      - name: Scrape ${{ matrix.city }} - ${{ matrix.property_type }} ${{ matrix.region || matrix.chunk }}
+        run: python scraper_sale_${{ matrix.city }}.py "${{ matrix.property_type }}" "${{ matrix.region || matrix.chunk }}"
       - name: Commit result
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add data/
-          git commit -m "Scrape ${{ matrix.city }} - ${{ matrix.property_type }} ${{ matrix.region }}" || echo "No changes"
+          git commit -m "Scrape ${{ matrix.city }} - ${{ matrix.property_type }} ${{ matrix.region || matrix.chunk }}" || echo "No changes"
           for i in 1 2 3 4 5; do
             git pull --rebase origin main && git push && break
             sleep 5
@@ -135,7 +202,8 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add data/listings_sale_medina_all_types.csv data/listings_sale_jeddah_all_types.csv
+          [ -f data/listings_sale_medina_all_types.csv ] && git add data/listings_sale_medina_all_types.csv || echo "ملف المدينة غير موجود بعد"
+          [ -f data/listings_sale_jeddah_all_types.csv ] && git add data/listings_sale_jeddah_all_types.csv || echo "ملف جدة غير موجود بعد"
           git commit -m "Merge Medina + Jeddah type files" || echo "No changes"
           for i in 1 2 3 4 5; do
             git pull --rebase origin main && git push && break
