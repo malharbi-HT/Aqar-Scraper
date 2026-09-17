@@ -14,7 +14,7 @@ import sys
 sys.path.insert(0, os.path.dirname(__file__))
 from rented_extracted_no_api import (
     RENTED_HINTS, extract_annual_rent, sanity_check_rent,
-    extract_key_features, normalize_for_duplicate_check,
+    extract_key_features, normalize_for_duplicate_check, is_owner_direct,
 )
 
 DATA_DIR = os.path.join(os.path.dirname(__file__), "data")
@@ -64,6 +64,15 @@ def process_type(df, type_label):
         axis=1
     )
     candidates["key_features"] = candidates["description"].apply(extract_key_features)
+
+    owner_flags, owner_reasons = [], []
+    for _, row in candidates.iterrows():
+        is_owner, reason = is_owner_direct(row)
+        owner_flags.append("نعم" if is_owner else "لا")
+        owner_reasons.append(reason)
+    candidates["من_المالك_مباشرة"] = owner_flags
+    candidates["owner_detection_reason"] = owner_reasons
+
     candidates["نوع_العقار"] = type_label
     return candidates
 
@@ -108,6 +117,7 @@ def main():
     cols = [c for c in ["listing_id", "url", "title", "published_at", "نوع_العقار", "district", "direction",
                           "price", "area_sqm", "rooms", "bathrooms", "age_years",
                           "actual_annual_rent", "yield_pct", "key_features",
+                          "من_المالك_مباشرة", "owner_detection_reason",
                           "description"] if c in combined.columns]
     combined = combined[cols]
 
