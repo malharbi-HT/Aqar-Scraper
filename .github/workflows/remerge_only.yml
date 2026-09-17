@@ -1,0 +1,49 @@
+name: Re-merge Only (Medina + Jeddah)
+
+on:
+  workflow_dispatch:   # تشغيل يدوي -- يعيد التجميع بس (بدون إعادة سحب) لتطبيق تقصير عمود الصور على البيانات الموجودة
+
+jobs:
+  merge:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: pip install pandas
+      - name: Merge all type files into one per city
+        run: |
+          python3 << 'PYEOF'
+          import pandas as pd
+          import glob
+
+          for city in ["medina", "jeddah"]:
+              files = glob.glob(f"data/{city}_by_type/listings_{city}_*.csv")
+              if not files:
+                  print(f"{city}: ما لقينا أي ملفات")
+                  continue
+              dfs = [pd.read_csv(f, encoding="utf-8-sig") for f in files]
+              combined = pd.concat(dfs, ignore_index=True)
+
+              full_images_path = f"data/{city}_by_type/images_full_{city}.csv"
+              if "images" in combined.columns:
+                  combined[["listing_id", "images"]].to_csv(full_images_path, index=False, encoding="utf-8-sig")
+                  combined["images"] = combined["images"].apply(
+                      lambda v: str(v).split(" | ")[0] if pd.notna(v) else v
+                  )
+
+              out_path = f"data/listings_sale_{city}_all_types.csv"
+              combined.to_csv(out_path, index=False, encoding="utf-8-sig")
+              print(f"{city}: دمجنا {len(files)} ملف -> {len(combined)} إعلان -> {out_path}")
+          PYEOF
+      - name: Commit merged files
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add data/
+          git commit -m "Re-merge with shortened images column" || echo "No changes"
+          for i in 1 2 3 4 5; do
+            git pull --rebase origin main && git push && break
+            sleep 5
+          done
