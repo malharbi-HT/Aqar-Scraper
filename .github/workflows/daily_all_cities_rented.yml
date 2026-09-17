@@ -1,0 +1,192 @@
+name: Daily All Cities - Rented + Owner Detection
+
+on:
+  schedule:
+    - cron: '0 21 * * *'   # يوميًا 9 مساءً (نفس توقيت البايبلاين الأساسي بالمشروع)
+  workflow_dispatch:
+
+concurrency:
+  group: daily-all-cities-rented
+  cancel-in-progress: false
+
+jobs:
+  # ══════════════════════════════════════════════════════════
+  # الرياض -- سلسلة كاملة (سحب + تنظيف + استخراج مؤجّرة + من المالك بعمود واحد)
+  # ══════════════════════════════════════════════════════════
+  riyadh:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: pip install pandas requests beautifulsoup4 lxml scikit-learn
+
+      - name: 1) Scrape sale listings (apartments)
+        run: python scraper_sale.py
+      - name: 2) Fix price (NLP)
+        run: python fix_price_nlp.py
+      - name: 3) Fix area (NLP)
+        run: python fix_area_nlp.py
+      - name: 4) Finalize area
+        run: python finalize_area.py
+      - name: 5) Cross-check area
+        run: python cross_check_area.py
+      - name: 6) Fix rooms/bathrooms
+        run: python fix_rooms_bathrooms_sale.py
+      - name: 7) Detect anomalies
+        run: python detect_anomalies.py
+      - name: 8) Merge final report
+        run: python merge_final_report.py
+      - name: 9) Extract rented (with owner column)
+        run: python rented_extracted_no_api.py
+
+      - name: Commit Riyadh results
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add data/
+          git commit -m "Riyadh: scrape -> clean -> extract rented (+ owner)" || echo "No changes"
+          for i in 1 2 3 4 5; do
+            git pull --rebase origin main && git push && break
+            sleep 5
+          done
+
+  # ══════════════════════════════════════════════════════════
+  # الرياض -- باقي الأنواع (فلل، أدوار، عمائر، مكاتب، أراضي)
+  # سحب متوازي (matrix) + تنظيف + استخراج مؤجّرة بعمود المالك
+  # ══════════════════════════════════════════════════════════
+  riyadh_scrape_other_types:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        property_type:
+          - { script: scraper_villa.py,    key: villa }
+          - { script: scraper_floor.py,    key: floor }
+          - { script: scraper_land.py,     key: land }
+          - { script: scraper_building.py, key: building }
+          - { script: scraper_office.py,   key: office }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: pip install pandas requests beautifulsoup4 lxml
+      - name: Scrape ${{ matrix.property_type.key }}
+        run: python ${{ matrix.property_type.script }}
+      - name: Commit ${{ matrix.property_type.key }} raw data
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add data/listings_${{ matrix.property_type.key }}.csv
+          git commit -m "Riyadh: scrape ${{ matrix.property_type.key }}" || echo "No changes"
+          for i in 1 2 3 4 5; do
+            git pull --rebase origin main && git push && break
+            sleep 5
+          done
+
+  riyadh_clean_and_extract_other_types:
+    needs: riyadh_scrape_other_types
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: pip install pandas scikit-learn
+      - name: Clean property types (anomaly exclusion)
+        run: python clean_property_types.py
+      - name: Extract rented other types (with owner column)
+        run: python rented_other_types_no_api.py
+      - name: Commit other-types results
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add data/
+          git commit -m "Riyadh other types: clean -> extract rented (+ owner)" || echo "No changes"
+          for i in 1 2 3 4 5; do
+            git pull --rebase origin main && git push && break
+            sleep 5
+          done
+
+  # ══════════════════════════════════════════════════════════
+  # دمج شقق الرياض + باقي الأنواع بملف واحد نهائي
+  # ══════════════════════════════════════════════════════════
+  merge_riyadh:
+    needs: [riyadh, riyadh_clean_and_extract_other_types]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: pip install pandas
+      - name: Merge apartments + other types into one file
+        run: |
+          python3 << 'PYEOF'
+          import pandas as pd
+          import os
+
+          dfs = []
+
+          apt_path = "data/rented_extracted_no_api.csv"
+          if os.path.exists(apt_path):
+              apt_df = pd.read_csv(apt_path, encoding="utf-8-sig")
+              if "نوع_العقار" not in apt_df.columns:
+                  apt_df["نوع_العقار"] = "شقة"
+              dfs.append(apt_df)
+              print(f"شقق: {len(apt_df)} صف")
+
+          other_path = "data/rented_other_types_no_api.csv"
+          if os.path.exists(other_path):
+              other_df = pd.read_csv(other_path, encoding="utf-8-sig")
+              dfs.append(other_df)
+              print(f"أنواع ثانية: {len(other_df)} صف")
+
+          if not dfs:
+              print("ما لقينا أي ملف للدمج")
+          else:
+              combined = pd.concat(dfs, ignore_index=True)
+              out_path = "data/rented_riyadh_no_api.csv"
+              combined.to_csv(out_path, index=False, encoding="utf-8-sig")
+              print(f"دمجنا -> {len(combined)} صف -> {out_path}")
+          PYEOF
+      - name: Commit merged file
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          [ -f data/rented_riyadh_no_api.csv ] && git add data/rented_riyadh_no_api.csv || echo "ملف الدمج غير موجود"
+          git commit -m "Merge Riyadh apartments + other types" || echo "No changes"
+          for i in 1 2 3 4 5; do
+            git pull --rebase origin main && git push && break
+            sleep 5
+          done
+
+  # ══════════════════════════════════════════════════════════
+  # المدينة المنورة + جدة -- كشف شذوذ + استخراج مؤجّرة (بعمود من المالك جاهز)
+  # (ملاحظة: مرحلة السحب نفسها لها Workflow منفصل يشتغل كل ساعتين، هذا
+  # يعتمد على آخر بيانات مسحوبة، مو يسحب من الصفر)
+  # ══════════════════════════════════════════════════════════
+  medina_jeddah:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: pip install pandas scikit-learn
+      - run: python detect_anomalies_city_no_api.py medina
+      - run: python detect_anomalies_city_no_api.py jeddah
+      - run: python rented_by_city_no_api.py medina
+      - run: python rented_by_city_no_api.py jeddah
+      - name: Commit Medina + Jeddah results
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add data/
+          git commit -m "Medina + Jeddah: detect anomalies -> extract rented (+ owner)" || echo "No changes"
+          for i in 1 2 3 4 5; do
+            git pull --rebase origin main && git push && break
+            sleep 5
+          done
