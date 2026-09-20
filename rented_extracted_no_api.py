@@ -200,6 +200,35 @@ def sanity_check_rent(annual_rent, price):
     return annual_rent
 
 
+import re as _re
+# صياغات شائعة تدل على إعلان مباشر من المالك بنص الوصف
+OWNER_HINTS = _re.compile(
+    r"من\s*المالك\s*مباشرة?|مباشر(?:ة)?\s*من\s*المالك|أنا\s*المالك|"
+    r"من\s*صاحب\s*العقار|المالك\s*مباشرة?|بدون\s*وسيط|بدون\s*وسطاء|"
+    r"مباشرة?\s*من\s*صاحب|والمالك\s*(?:سمح|موافق)",
+    _re.IGNORECASE,
+)
+
+
+def is_owner_direct(row):
+    """يتحقق من إعلان مباشر من المالك -- نص الوصف، أو غياب شركة بعمود
+    المعلن (لو العمود متوفر بالملف)"""
+    description = str(row.get("description", ""))
+    if OWNER_HINTS.search(description):
+        return True, "الوصف يذكر إعلان مباشر من المالك"
+
+    company = row.get("advertiser_company")
+    adv_type = row.get("advertiser_type")
+
+    if pd.notna(adv_type) and adv_type == 0:
+        return True, "advertiser_type = 0 (بدون شركة مسجّلة)"
+
+    if "advertiser_company" in row.index and (pd.isna(company) or str(company).strip() == ""):
+        return True, "عمود الشركة فاضي (فرد)"
+
+    return False, ""
+
+
 def normalize_for_duplicate_check(description):
     """يطبّع الوصف لمقارنة تكرار دقيقة -- يشيل فروقات سطحية (مسافات زايدة،
     أرقام جوال متغيرة، إيموجي) اللي ممكن تخلي نفس الإعلان يبان مختلف شكليًا"""
@@ -291,6 +320,14 @@ def main():
     )
     candidates["key_features"] = candidates["description"].apply(extract_key_features)
 
+    owner_flags, owner_reasons = [], []
+    for _, row in candidates.iterrows():
+        is_owner, reason = is_owner_direct(row)
+        owner_flags.append("نعم" if is_owner else "لا")
+        owner_reasons.append(reason)
+    candidates["من_المالك_مباشرة"] = owner_flags
+    candidates["owner_detection_reason"] = owner_reasons
+
     with_rent = candidates["actual_annual_rent"].notna().sum()
     print(f"لقينا رقم إيجار موثوق: {with_rent} من {len(candidates)}")
 
@@ -315,6 +352,7 @@ def main():
     cols = [c for c in ["listing_id", "url", "title", "published_at", "district", "direction", "price",
                           "area_sqm", "rooms", "bathrooms", "age_years",
                           "actual_annual_rent", "yield_pct", "key_features",
+                          "من_المالك_مباشرة", "owner_detection_reason",
                           "description"] if c in candidates.columns]
     candidates = candidates[cols]
 
