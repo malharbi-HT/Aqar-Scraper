@@ -48,8 +48,8 @@ def detect_anomalies_for_type(group):
 
 
 def main():
-    if len(sys.argv) < 2 or sys.argv[1] not in ("medina", "jeddah"):
-        print("الاستخدام: python detect_anomalies_city_no_api.py medina|jeddah")
+    if len(sys.argv) < 2 or sys.argv[1] not in ("medina", "jeddah", "mecca"):
+        print("الاستخدام: python detect_anomalies_city_no_api.py medina|jeddah|mecca")
         return
     city_key = sys.argv[1]
 
