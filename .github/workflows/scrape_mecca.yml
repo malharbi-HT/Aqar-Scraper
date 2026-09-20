@@ -1,0 +1,90 @@
+name: Scrape Mecca (Parallel by Type + Chunk)
+
+on:
+  schedule:
+    - cron: '0 */2 * * *'   # كل ساعتين -- يكمّل الباقي تدريجيًا
+  workflow_dispatch:
+
+concurrency:
+  group: scrape-mecca
+  cancel-in-progress: false
+
+jobs:
+  scrape:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        property_type:
+          - شقق-للبيع
+          - أراضي-للبيع
+          - دور-للبيع
+          - فلل-للبيع
+          - عمائر-للبيع
+          - مكاتب-للبيع
+          - محلات-للبيع
+          - مستودعات-للبيع
+          - مصانع-للبيع
+        chunk: ["0/3", "1/3", "2/3"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: pip install requests beautifulsoup4 lxml
+      - name: Scrape ${{ matrix.property_type }} ${{ matrix.chunk }}
+        run: python scraper_sale_mecca.py "${{ matrix.property_type }}" "${{ matrix.chunk }}"
+      - name: Commit result
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add data/
+          git commit -m "Scrape Mecca - ${{ matrix.property_type }} ${{ matrix.chunk }}" || echo "No changes"
+          for i in 1 2 3 4 5; do
+            git pull --rebase origin main && git push && break
+            sleep 5
+          done
+
+  merge:
+    needs: scrape
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: pip install pandas
+      - name: Merge all type files into one
+        run: |
+          python3 << 'PYEOF'
+          import pandas as pd
+          import glob
+
+          files = glob.glob("data/mecca_by_type/listings_mecca_*.csv")
+          if not files:
+              print("ما لقينا أي ملفات")
+          else:
+              dfs = [pd.read_csv(f, encoding="utf-8-sig") for f in files]
+              combined = pd.concat(dfs, ignore_index=True)
+
+              full_images_path = "data/mecca_by_type/images_full_mecca.csv"
+              if "images" in combined.columns:
+                  combined[["listing_id", "images"]].to_csv(full_images_path, index=False, encoding="utf-8-sig")
+                  combined["images"] = combined["images"].apply(
+                      lambda v: str(v).split(" | ")[0] if pd.notna(v) else v
+                  )
+
+              out_path = "data/listings_sale_mecca_all_types.csv"
+              combined.to_csv(out_path, index=False, encoding="utf-8-sig")
+              print(f"دمجنا {len(files)} ملف -> {len(combined)} إعلان -> {out_path}")
+          PYEOF
+      - name: Commit merged file
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          [ -f data/listings_sale_mecca_all_types.csv ] && git add data/listings_sale_mecca_all_types.csv || echo "ملف مكة غير موجود"
+          git commit -m "Merge Mecca type files" || echo "No changes"
+          for i in 1 2 3 4 5; do
+            git pull --rebase origin main && git push && break
+            sleep 5
+          done
