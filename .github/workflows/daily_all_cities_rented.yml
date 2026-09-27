@@ -164,11 +164,11 @@ jobs:
           done
 
   # ══════════════════════════════════════════════════════════
-  # المدينة المنورة + جدة + مكة + المنطقة الشرقية (6 مدن) -- كشف شذوذ + استخراج مؤجّرة (بعمود من المالك جاهز)
+  # المدينة المنورة + جدة + مكة + المنطقة الشرقية (6) + مدن أخرى (5) -- كشف شذوذ + استخراج مؤجّرة (بعمود من المالك جاهز)
   # (ملاحظة: مرحلة السحب نفسها لها Workflow منفصل يشتغل كل ساعتين، هذا
   # يعتمد على آخر بيانات مسحوبة، مو يسحب من الصفر)
   # ══════════════════════════════════════════════════════════
-  medina_jeddah_mecca_eastern:
+  medina_jeddah_mecca_eastern_other:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -185,6 +185,11 @@ jobs:
       - run: python detect_anomalies_city_no_api.py jubail
       - run: python detect_anomalies_city_no_api.py ahsa
       - run: python detect_anomalies_city_no_api.py qatif
+      - run: python detect_anomalies_city_no_api.py jazan
+      - run: python detect_anomalies_city_no_api.py khamis_mushait
+      - run: python detect_anomalies_city_no_api.py abha
+      - run: python detect_anomalies_city_no_api.py buraidah
+      - run: python detect_anomalies_city_no_api.py taif
       - run: python rented_by_city_no_api.py medina
       - run: python rented_by_city_no_api.py jeddah
       - run: python rented_by_city_no_api.py mecca
@@ -194,6 +199,11 @@ jobs:
       - run: python rented_by_city_no_api.py jubail
       - run: python rented_by_city_no_api.py ahsa
       - run: python rented_by_city_no_api.py qatif
+      - run: python rented_by_city_no_api.py jazan
+      - run: python rented_by_city_no_api.py khamis_mushait
+      - run: python rented_by_city_no_api.py abha
+      - run: python rented_by_city_no_api.py buraidah
+      - run: python rented_by_city_no_api.py taif
       - name: Commit Medina + Jeddah results
         run: |
           git config user.name "github-actions[bot]"
