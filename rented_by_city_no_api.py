@@ -53,11 +53,15 @@ def is_owner_direct(row):
 
 
 def main():
-    if len(sys.argv) < 2 or sys.argv[1] not in ("medina", "jeddah", "mecca"):
+    if len(sys.argv) < 2 or sys.argv[1] not in ("medina", "jeddah", "mecca", "dammam", "khobar", "dhahran", "jubail", "ahsa", "qatif"):
         print("الاستخدام: python rented_by_city_no_api.py medina|jeddah|mecca")
         return
     city_key = sys.argv[1]
-    city_labels = {"medina": "المدينة المنورة", "jeddah": "جدة", "mecca": "مكة المكرمة"}
+    city_labels = {
+        "medina": "المدينة المنورة", "jeddah": "جدة", "mecca": "مكة المكرمة",
+        "dammam": "الدمام", "khobar": "الخبر", "dhahran": "الظهران",
+        "jubail": "الجبيل", "ahsa": "الأحساء", "qatif": "القطيف",
+    }
     city_label = city_labels[city_key]
 
     normal_path = os.path.join(DATA_DIR, f"listings_sale_{city_key}_all_types_normal.csv")
