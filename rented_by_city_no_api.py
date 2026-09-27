@@ -53,7 +53,7 @@ def is_owner_direct(row):
 
 
 def main():
-    if len(sys.argv) < 2 or sys.argv[1] not in ("medina", "jeddah", "mecca", "dammam", "khobar", "dhahran", "jubail", "ahsa", "qatif"):
+    if len(sys.argv) < 2 or sys.argv[1] not in ("medina", "jeddah", "mecca", "dammam", "khobar", "dhahran", "jubail", "ahsa", "qatif", "jazan", "khamis_mushait", "abha", "buraidah", "taif"):
         print("الاستخدام: python rented_by_city_no_api.py medina|jeddah|mecca")
         return
     city_key = sys.argv[1]
@@ -61,6 +61,8 @@ def main():
         "medina": "المدينة المنورة", "jeddah": "جدة", "mecca": "مكة المكرمة",
         "dammam": "الدمام", "khobar": "الخبر", "dhahran": "الظهران",
         "jubail": "الجبيل", "ahsa": "الأحساء", "qatif": "القطيف",
+        "jazan": "جازان", "khamis_mushait": "خميس مشيط", "abha": "أبها",
+        "buraidah": "بريدة", "taif": "الطائف",
     }
     city_label = city_labels[city_key]
 
