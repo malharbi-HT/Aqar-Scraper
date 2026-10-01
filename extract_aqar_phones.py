@@ -8,24 +8,25 @@ import gspread
 from playwright.sync_api import sync_playwright
 
 
-# =========================================================
+# ============================================================
 # SETTINGS
-# =========================================================
+# ============================================================
 
 GOOGLE_SHEET_ID = os.environ["GOOGLE_SHEET_ID"]
 
-SHEET_NAME = os.getenv(
-    "SHEET_NAME",
-    "Riyadh"
-)
+# Optional.
+# If empty or not found, first worksheet will be used automatically.
+SHEET_NAME = os.getenv("SHEET_NAME", "").strip()
 
-MIN_DELAY = 3
-MAX_DELAY = 7
+MIN_DELAY = float(os.getenv("MIN_DELAY", "3"))
+MAX_DELAY = float(os.getenv("MAX_DELAY", "7"))
+
+PAGE_TIMEOUT = int(os.getenv("PAGE_TIMEOUT", "45000"))
 
 
-# =========================================================
-# PHONE
-# =========================================================
+# ============================================================
+# ARABIC DIGITS
+# ============================================================
 
 ARABIC_DIGITS = str.maketrans(
     "٠١٢٣٤٥٦٧٨٩۰۱۲۳۴۵۶۷۸۹",
@@ -34,20 +35,28 @@ ARABIC_DIGITS = str.maketrans(
 
 
 def normalize_digits(text):
+    if text is None:
+        return ""
+
     return str(text).translate(ARABIC_DIGITS)
 
 
+# ============================================================
+# PHONE
+# ============================================================
+
 def normalize_phone(value):
+    """
+    Convert Saudi mobile numbers to:
+    05XXXXXXXX
+    """
+
     if not value:
         return ""
 
     value = normalize_digits(value)
 
-    digits = re.sub(
-        r"\D",
-        "",
-        value
-    )
+    digits = re.sub(r"\D", "", value)
 
     if digits.startswith("00966"):
         digits = digits[5:]
@@ -65,24 +74,32 @@ def normalize_phone(value):
 
 
 def extract_phone(text):
+    """
+    Search Saudi mobile number in supplied text.
+    """
+
     if not text:
         return ""
 
     text = normalize_digits(text)
 
     patterns = [
+        # +966551234567 / +966 55 123 4567
         r"(?:\+?966|00966)[\s\-\.]*5[\s\-\.]*\d{2}[\s\-\.]*\d{3}[\s\-\.]*\d{4}",
+
+        # 055 123 4567 / 055-123-4567
         r"05[\s\-\.]*\d{2}[\s\-\.]*\d{3}[\s\-\.]*\d{4}",
+
+        # 0551234567
         r"\b05\d{8}\b",
     ]
 
     for pattern in patterns:
-        matches = re.findall(
-            pattern,
-            text
-        )
+
+        matches = re.findall(pattern, text)
 
         for item in matches:
+
             phone = normalize_phone(item)
 
             if phone:
@@ -91,9 +108,9 @@ def extract_phone(text):
     return ""
 
 
-# =========================================================
+# ============================================================
 # OWNER / BROKER
-# =========================================================
+# ============================================================
 
 def detect_owner_or_broker(text):
 
@@ -102,7 +119,10 @@ def detect_owner_or_broker(text):
 
     text = normalize_digits(text).lower()
 
-    # Explicit classification from Aqar
+    # --------------------------------------------------------
+    # Explicit Aqar classifications first
+    # --------------------------------------------------------
+
     if re.search(
         r"صفة\s*المعلن\s*[:：]?\s*مالك",
         text
@@ -115,11 +135,16 @@ def detect_owner_or_broker(text):
     ):
         return "وسيط"
 
-    broker_words = [
+    # --------------------------------------------------------
+    # Strong broker indicators
+    # --------------------------------------------------------
+
+    broker_keywords = [
         "وسيط عقاري",
-        "وسيط",
         "مسوق عقاري",
+        "وسيط ومسوق عقاري",
         "رخصة فال",
+        "ترخيص فال",
         "رقم عقد الوساطة",
         "عقد الوساطة",
         "مكتب عقاري",
@@ -127,47 +152,52 @@ def detect_owner_or_broker(text):
         "مؤسسة عقارية",
     ]
 
-    for word in broker_words:
-        if word in text:
+    for keyword in broker_keywords:
+
+        if keyword in text:
             return "وسيط"
 
-    owner_words = [
+    # --------------------------------------------------------
+    # Strong owner indicators
+    # --------------------------------------------------------
+
+    owner_keywords = [
         "من المالك مباشرة",
         "مباشر من المالك",
         "المالك مباشرة",
         "مالك العقار",
+        "أنا المالك",
+        "انا المالك",
     ]
 
-    for word in owner_words:
-        if word in text:
+    for keyword in owner_keywords:
+
+        if keyword in text:
             return "مالك"
 
     return ""
 
 
-# =========================================================
-# CONTACT BUTTON
-# =========================================================
+# ============================================================
+# PHONE FROM TEL LINKS
+# ============================================================
 
 def phone_from_tel_links(page):
 
     try:
-        links = page.locator(
-            'a[href^="tel:"]'
-        )
 
-        for i in range(
-            links.count()
-        ):
-            href = links.nth(
-                i
-            ).get_attribute(
-                "href"
-            )
+        links = page.locator('a[href^="tel:"]')
 
-            phone = extract_phone(
-                href
-            )
+        count = links.count()
+
+        for i in range(count):
+
+            href = links.nth(i).get_attribute("href")
+
+            if not href:
+                continue
+
+            phone = extract_phone(href)
 
             if phone:
                 return phone
@@ -177,6 +207,10 @@ def phone_from_tel_links(page):
 
     return ""
 
+
+# ============================================================
+# CLICK CONTACT BUTTON
+# ============================================================
 
 def click_show_phone(page):
 
@@ -188,37 +222,48 @@ def click_show_phone(page):
         "رقم الاتصال",
         "اتصال",
         "اتصل",
-        "تواصل",
     ]
+
+    # --------------------------------------------------------
+    # Try exact visible text
+    # --------------------------------------------------------
 
     for label in labels:
 
         try:
-            loc = page.get_by_text(
+
+            locator = page.get_by_text(
                 label,
                 exact=True
             )
 
-            count = loc.count()
+            count = locator.count()
 
-            for i in range(
-                min(count, 3)
-            ):
-                item = loc.nth(i)
+            for i in range(min(count, 5)):
+
+                item = locator.nth(i)
 
                 try:
-                    if item.is_visible():
-                        item.scroll_into_view_if_needed()
 
-                        time.sleep(0.5)
+                    if not item.is_visible():
+                        continue
 
-                        item.click(
-                            timeout=5000
-                        )
+                    item.scroll_into_view_if_needed()
 
-                        time.sleep(2)
+                    time.sleep(0.5)
 
-                        return True
+                    href = item.get_attribute("href")
+
+                    if href and href.startswith("tel:"):
+                        return href
+
+                    item.click(
+                        timeout=5000
+                    )
+
+                    time.sleep(2)
+
+                    return True
 
                 except Exception:
                     continue
@@ -226,45 +271,55 @@ def click_show_phone(page):
         except Exception:
             continue
 
+    # --------------------------------------------------------
+    # Try common selectors
+    # --------------------------------------------------------
+
     selectors = [
+        'button:has-text("إظهار رقم الاتصال")',
+        'button:has-text("إظهار الرقم")',
         'button:has-text("اتصال")',
-        'button:has-text("إظهار")',
-        '[role="button"]:has-text("اتصال")',
+        'button:has-text("اتصل")',
+        '[role="button"]:has-text("إظهار رقم الاتصال")',
         '[role="button"]:has-text("إظهار")',
+        '[role="button"]:has-text("اتصال")',
+        '[role="button"]:has-text("اتصل")',
         'a[href^="tel:"]',
     ]
 
     for selector in selectors:
 
         try:
-            items = page.locator(
-                selector
-            )
 
-            for i in range(
-                min(items.count(), 3)
-            ):
+            items = page.locator(selector)
+
+            count = items.count()
+
+            for i in range(min(count, 5)):
+
                 item = items.nth(i)
 
                 try:
-                    if item.is_visible():
 
-                        href = item.get_attribute(
-                            "href"
-                        )
+                    if not item.is_visible():
+                        continue
 
-                        if href and href.startswith("tel:"):
-                            return href
+                    href = item.get_attribute("href")
 
-                        item.scroll_into_view_if_needed()
+                    if href and href.startswith("tel:"):
+                        return href
 
-                        item.click(
-                            timeout=5000
-                        )
+                    item.scroll_into_view_if_needed()
 
-                        time.sleep(2)
+                    time.sleep(0.5)
 
-                        return True
+                    item.click(
+                        timeout=5000
+                    )
+
+                    time.sleep(2)
+
+                    return True
 
                 except Exception:
                     continue
@@ -275,42 +330,52 @@ def click_show_phone(page):
     return False
 
 
-# =========================================================
-# Aqar listing
-# =========================================================
+# ============================================================
+# PROCESS ONE Aqar LISTING
+# ============================================================
 
 def process_aqar_listing(page, url):
 
     result = {
         "phone": "",
-        "owner_or_broker": ""
+        "owner_or_broker": "",
     }
 
-    if not url.startswith("http"):
+    if not url:
         return result
 
-    print(f"Opening {url}")
+    if not str(url).startswith("http"):
+        return result
+
+    print()
+    print("Opening:", url)
 
     try:
+
         page.goto(
             url,
             wait_until="domcontentloaded",
-            timeout=45000
+            timeout=PAGE_TIMEOUT
         )
 
     except Exception as exc:
+
         print(
-            "Page load error:",
+            "Page loading warning:",
             exc
         )
 
+    # Allow JS content to render
     time.sleep(3)
 
-    # =====================================================
-    # 1. DESCRIPTION + VISIBLE INFO
-    # =====================================================
+    # ========================================================
+    # STEP 1:
+    # Search visible page content first
+    # Description + additional information + advertiser info
+    # ========================================================
 
     try:
+
         body_text = page.locator(
             "body"
         ).inner_text(
@@ -318,21 +383,24 @@ def process_aqar_listing(page, url):
         )
 
     except Exception:
+
         body_text = ""
 
-    result[
-        "owner_or_broker"
-    ] = detect_owner_or_broker(
+    owner_type = detect_owner_or_broker(
         body_text
     )
+
+    if owner_type:
+        result["owner_or_broker"] = owner_type
 
     phone = extract_phone(
         body_text
     )
 
     if phone:
+
         print(
-            "Phone found before click:",
+            "Phone found in visible information:",
             phone
         )
 
@@ -340,15 +408,17 @@ def process_aqar_listing(page, url):
 
         return result
 
-    # =====================================================
-    # 2. TEL LINKS
-    # =====================================================
+    # ========================================================
+    # STEP 2:
+    # Look for hidden/available tel links
+    # ========================================================
 
     phone = phone_from_tel_links(
         page
     )
 
     if phone:
+
         print(
             "Phone found in tel link:",
             phone
@@ -358,9 +428,11 @@ def process_aqar_listing(page, url):
 
         return result
 
-    # =====================================================
-    # 3. CLICK SHOW CONTACT
-    # =====================================================
+    # ========================================================
+    # STEP 3:
+    # No phone found.
+    # Click contact button.
+    # ========================================================
 
     print(
         "Phone not visible. Trying contact button..."
@@ -370,6 +442,7 @@ def process_aqar_listing(page, url):
         page
     )
 
+    # Sometimes the function itself returns tel:...
     if isinstance(clicked, str):
 
         phone = extract_phone(
@@ -377,21 +450,9 @@ def process_aqar_listing(page, url):
         )
 
         if phone:
-            result["phone"] = phone
 
-            return result
-
-    if clicked:
-
-        time.sleep(2)
-
-        phone = phone_from_tel_links(
-            page
-        )
-
-        if phone:
             print(
-                "Phone found after click:",
+                "Phone found from contact link:",
                 phone
             )
 
@@ -399,21 +460,51 @@ def process_aqar_listing(page, url):
 
             return result
 
+    if clicked:
+
+        time.sleep(3)
+
+        # ----------------------------------------------------
+        # Try tel link after click
+        # ----------------------------------------------------
+
+        phone = phone_from_tel_links(
+            page
+        )
+
+        if phone:
+
+            print(
+                "Phone found after contact click:",
+                phone
+            )
+
+            result["phone"] = phone
+
+            return result
+
+        # ----------------------------------------------------
+        # Read page again after modal/reveal
+        # ----------------------------------------------------
+
         try:
-            body_text_after = page.locator(
+
+            updated_text = page.locator(
                 "body"
             ).inner_text(
                 timeout=10000
             )
 
         except Exception:
-            body_text_after = ""
+
+            updated_text = ""
 
         phone = extract_phone(
-            body_text_after
+            updated_text
         )
 
         if phone:
+
             print(
                 "Phone revealed after click:",
                 phone
@@ -421,25 +512,31 @@ def process_aqar_listing(page, url):
 
             result["phone"] = phone
 
-        if not result[
-            "owner_or_broker"
-        ]:
+        if not result["owner_or_broker"]:
 
-            result[
-                "owner_or_broker"
-            ] = detect_owner_or_broker(
-                body_text_after
+            result["owner_or_broker"] = (
+                detect_owner_or_broker(
+                    updated_text
+                )
             )
 
     if not result["phone"]:
-        print("Phone not found")
+        print(
+            "Phone not found."
+        )
+
+    if not result["owner_or_broker"]:
+        print(
+            "Owner/Broker not determined."
+        )
 
     return result
 
 
-# =========================================================
-# GOOGLE SHEET USING WORKLOAD IDENTITY
-# =========================================================
+# ============================================================
+# GOOGLE SHEETS
+# WORKLOAD IDENTITY FEDERATION
+# ============================================================
 
 def get_google_sheet():
 
@@ -465,21 +562,76 @@ def get_google_sheet():
         GOOGLE_SHEET_ID
     )
 
-    return spreadsheet.worksheet(
-        SHEET_NAME
+    print(
+        "Google Sheet opened:",
+        spreadsheet.title
     )
 
+    # --------------------------------------------------------
+    # If SHEET_NAME is supplied, try it
+    # --------------------------------------------------------
+
+    if SHEET_NAME:
+
+        try:
+
+            worksheet = spreadsheet.worksheet(
+                SHEET_NAME
+            )
+
+            print(
+                "Using requested worksheet:",
+                worksheet.title
+            )
+
+            return worksheet
+
+        except gspread.exceptions.WorksheetNotFound:
+
+            print(
+                f'Worksheet "{SHEET_NAME}" was not found.'
+            )
+
+            print(
+                "Falling back to first worksheet."
+            )
+
+    # --------------------------------------------------------
+    # Otherwise use first tab
+    # --------------------------------------------------------
+
+    worksheets = spreadsheet.worksheets()
+
+    if not worksheets:
+
+        raise RuntimeError(
+            "No worksheets found inside Google Sheet."
+        )
+
+    worksheet = worksheets[0]
+
+    print(
+        "Automatically using worksheet:",
+        worksheet.title
+    )
+
+    return worksheet
+
+
+# ============================================================
+# COLUMN HELPERS
+# ============================================================
 
 def find_column(headers, choices):
 
     normalized = {
-        h.strip().lower(): i
-        for i, h in enumerate(headers)
+        str(header).strip().lower(): index
+        for index, header in enumerate(headers)
     }
 
-    for name in choices:
+    for choice in choices:
 
-        key = name.strip().lower()
+        key = str(choice).strip().lower()
 
         if key in normalized:
             return normalized[key]
@@ -487,9 +639,36 @@ def find_column(headers, choices):
     return None
 
 
-# =========================================================
+def normalize_decision(value):
+
+    value = str(
+        value
+    ).strip().upper()
+
+    if value in [
+        "PROCEED",
+        "بروسيد",
+    ]:
+        return "PROCEED"
+
+    if value in [
+        "REVIEW",
+        "ريفيو",
+    ]:
+        return "REVIEW"
+
+    if value in [
+        "REJECT",
+        "ريجكت",
+    ]:
+        return "REJECT"
+
+    return value
+
+
+# ============================================================
 # MAIN
-# =========================================================
+# ============================================================
 
 def main():
 
@@ -498,6 +677,7 @@ def main():
     all_rows = worksheet.get_all_values()
 
     if not all_rows:
+
         raise RuntimeError(
             "Google Sheet is empty."
         )
@@ -506,19 +686,21 @@ def main():
 
     data = all_rows[1:]
 
+    print()
     print(
         "Total rows:",
         len(data)
     )
 
-    # =====================================================
-    # Find URL column
-    # =====================================================
+    # ========================================================
+    # FIND URL COLUMN
+    # ========================================================
 
     url_index = find_column(
         headers,
         [
             "url",
+            "URL",
             "listing_url",
             "property_url",
             "link",
@@ -527,28 +709,10 @@ def main():
         ]
     )
 
-    # =====================================================
-    # Find Decision column
-    # =====================================================
-
-    decision_index = find_column(
-        headers,
-        [
-            "decision",
-            "initial_verdict",
-            "verdict",
-            "القرار",
-        ]
-    )
-
     if url_index is None:
-        raise RuntimeError(
-            "URL column not found."
-        )
 
-    if decision_index is None:
         raise RuntimeError(
-            "Decision column not found."
+            "URL column was not found."
         )
 
     print(
@@ -556,14 +720,36 @@ def main():
         headers[url_index]
     )
 
+    # ========================================================
+    # FIND DECISION COLUMN
+    # ========================================================
+
+    decision_index = find_column(
+        headers,
+        [
+            "decision",
+            "Decision",
+            "initial_verdict",
+            "verdict",
+            "status",
+            "القرار",
+        ]
+    )
+
+    if decision_index is None:
+
+        raise RuntimeError(
+            "Decision column was not found."
+        )
+
     print(
         "Decision column:",
         headers[decision_index]
     )
 
-    # =====================================================
-    # Add phone
-    # =====================================================
+    # ========================================================
+    # ADD PHONE COLUMN
+    # ========================================================
 
     phone_index = find_column(
         headers,
@@ -574,9 +760,7 @@ def main():
 
     if phone_index is None:
 
-        phone_index = len(
-            headers
-        )
+        phone_index = len(headers)
 
         worksheet.update_cell(
             1,
@@ -589,12 +773,12 @@ def main():
         )
 
         print(
-            "Added phone column."
+            "Added column: phone"
         )
 
-    # =====================================================
-    # Add owner_or_broker
-    # =====================================================
+    # ========================================================
+    # ADD OWNER/BROKER COLUMN
+    # ========================================================
 
     owner_index = find_column(
         headers,
@@ -605,9 +789,7 @@ def main():
 
     if owner_index is None:
 
-        owner_index = len(
-            headers
-        )
+        owner_index = len(headers)
 
         worksheet.update_cell(
             1,
@@ -620,14 +802,16 @@ def main():
         )
 
         print(
-            "Added owner_or_broker column."
+            "Added column: owner_or_broker"
         )
 
-    # =====================================================
-    # PRIORITY
-    # PROCEED -> REVIEW
-    # IGNORE REJECT
-    # =====================================================
+    # ========================================================
+    # PREPARE PRIORITY
+    #
+    # 1. PROCEED
+    # 2. REVIEW
+    # REJECT ignored
+    # ========================================================
 
     proceed_rows = []
     review_rows = []
@@ -640,23 +824,17 @@ def main():
         while len(row) < len(headers):
             row.append("")
 
-        decision = row[
-            decision_index
-        ].strip().upper()
+        decision = normalize_decision(
+            row[decision_index]
+        )
 
-        if decision in [
-            "PROCEED",
-            "بروسيد"
-        ]:
+        if decision == "PROCEED":
 
             proceed_rows.append(
                 (sheet_row, row)
             )
 
-        elif decision in [
-            "REVIEW",
-            "ريفيو"
-        ]:
+        elif decision == "REVIEW":
 
             review_rows.append(
                 (sheet_row, row)
@@ -669,23 +847,23 @@ def main():
 
     print()
     print(
-        "PROCEED:",
+        "PROCEED rows:",
         len(proceed_rows)
     )
 
     print(
-        "REVIEW:",
+        "REVIEW rows:",
         len(review_rows)
     )
 
     print(
-        "TOTAL TO PROCESS:",
+        "TOTAL eligible rows:",
         len(rows_to_process)
     )
 
-    # =====================================================
+    # ========================================================
     # BROWSER
-    # =====================================================
+    # ========================================================
 
     with sync_playwright() as p:
 
@@ -724,6 +902,11 @@ def main():
             rows_to_process
         )
 
+        processed = 0
+        phones_found = 0
+        owners_found = 0
+        brokers_found = 0
+
         for current, (
             sheet_row,
             row
@@ -732,42 +915,49 @@ def main():
             start=1
         ):
 
-            url = row[
-                url_index
-            ].strip()
-
-            decision = row[
-                decision_index
-            ].strip()
-
-            existing_phone = normalize_phone(
-                row[phone_index]
-                if len(row) > phone_index
-                else ""
-            )
-
-            existing_owner = (
-                row[owner_index].strip()
-                if len(row) > owner_index
-                else ""
-            )
-
             print()
             print(
-                f"[{current}/{total}]"
+                "=" * 70
             )
 
             print(
-                "Sheet row:",
-                sheet_row
+                f"[{current}/{total}] "
+                f"Google Sheet row {sheet_row}"
             )
+
+            url = str(
+                row[url_index]
+            ).strip()
+
+            decision = normalize_decision(
+                row[decision_index]
+            )
+
+            existing_phone = ""
+
+            if len(row) > phone_index:
+
+                existing_phone = normalize_phone(
+                    row[phone_index]
+                )
+
+            existing_owner = ""
+
+            if len(row) > owner_index:
+
+                existing_owner = str(
+                    row[owner_index]
+                ).strip()
 
             print(
                 "Decision:",
                 decision
             )
 
-            # Already complete
+            # ------------------------------------------------
+            # Skip completed rows
+            # ------------------------------------------------
+
             if (
                 existing_phone
                 and existing_owner
@@ -779,15 +969,30 @@ def main():
 
                 continue
 
+            if not url:
+
+                print(
+                    "URL is empty. Skipping."
+                )
+
+                continue
+
+            # ------------------------------------------------
+            # Process Aqar
+            # ------------------------------------------------
+
             try:
+
                 result = process_aqar_listing(
                     page,
                     url
                 )
 
-                # ==========================================
-                # WRITE PHONE
-                # ==========================================
+                processed += 1
+
+                # --------------------------------------------
+                # PHONE
+                # --------------------------------------------
 
                 if (
                     result["phone"]
@@ -800,14 +1005,16 @@ def main():
                         result["phone"]
                     )
 
+                    phones_found += 1
+
                     print(
                         "Saved phone:",
                         result["phone"]
                     )
 
-                # ==========================================
-                # WRITE OWNER / BROKER
-                # ==========================================
+                # --------------------------------------------
+                # OWNER / BROKER
+                # --------------------------------------------
 
                 if (
                     result["owner_or_broker"]
@@ -817,16 +1024,18 @@ def main():
                     worksheet.update_cell(
                         sheet_row,
                         owner_index + 1,
-                        result[
-                            "owner_or_broker"
-                        ]
+                        result["owner_or_broker"]
                     )
+
+                    if result["owner_or_broker"] == "مالك":
+                        owners_found += 1
+
+                    elif result["owner_or_broker"] == "وسيط":
+                        brokers_found += 1
 
                     print(
                         "Saved owner_or_broker:",
-                        result[
-                            "owner_or_broker"
-                        ]
+                        result["owner_or_broker"]
                     )
 
             except Exception as exc:
@@ -836,13 +1045,17 @@ def main():
                     exc
                 )
 
+            # ------------------------------------------------
+            # Delay
+            # ------------------------------------------------
+
             delay = random.uniform(
                 MIN_DELAY,
                 MAX_DELAY
             )
 
             print(
-                f"Waiting {delay:.1f}s"
+                f"Waiting {delay:.1f} seconds..."
             )
 
             time.sleep(
@@ -851,9 +1064,51 @@ def main():
 
         browser.close()
 
+    # ========================================================
+    # SUMMARY
+    # ========================================================
+
     print()
     print(
-        "Completed."
+        "=" * 70
+    )
+
+    print(
+        "COMPLETED"
+    )
+
+    print(
+        "Eligible PROCEED:",
+        len(proceed_rows)
+    )
+
+    print(
+        "Eligible REVIEW:",
+        len(review_rows)
+    )
+
+    print(
+        "Processed this run:",
+        processed
+    )
+
+    print(
+        "New phone numbers saved:",
+        phones_found
+    )
+
+    print(
+        "New owners identified:",
+        owners_found
+    )
+
+    print(
+        "New brokers identified:",
+        brokers_found
+    )
+
+    print(
+        "=" * 70
     )
 
 
