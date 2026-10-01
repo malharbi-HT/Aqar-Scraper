@@ -5,33 +5,36 @@ on:
 
 permissions:
   contents: read
+  id-token: write
 
 jobs:
   extract:
     runs-on: ubuntu-latest
 
     steps:
-
-      - name: Checkout
+      - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Python
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v3
+        with:
+          project_id: hissa-tech-opt
+          workload_identity_provider: projects/279042368566/locations/global/workloadIdentityPools/github-pool/providers/github
+          service_account: hissatech-aqar-agent@hissa-tech-opt.iam.gserviceaccount.com
+
+      - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
 
       - name: Install packages
         run: |
-          pip install -r requirements.txt
-
-      - name: Install Chromium
-        run: |
+          pip install gspread google-auth playwright
           playwright install --with-deps chromium
 
-      - name: Run phone extractor
+      - name: Run Aqar extractor
         env:
           GOOGLE_SHEET_ID: ${{ secrets.GOOGLE_SHEET_ID }}
-          GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
           SHEET_NAME: Riyadh
         run: |
           python extract_aqar_phones.py
