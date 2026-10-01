@@ -37,15 +37,11 @@ jobs:
         run: |
           playwright install --with-deps chromium
 
-      - name: Extract Aqar phone numbers
+      - name: Extract Aqar phones
         env:
           GOOGLE_SHEET_ID: ${{ secrets.GOOGLE_SHEET_ID }}
-
-          # Leave empty to use the first tab automatically
-          SHEET_NAME: ""
-
           MIN_DELAY: "3"
           MAX_DELAY: "7"
-
+          PAGE_TIMEOUT: "45000"
         run: |
           python extract_aqar_phones.py
