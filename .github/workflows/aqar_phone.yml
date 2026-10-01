@@ -18,6 +18,7 @@ jobs:
       - name: Authenticate to Google Cloud
         uses: google-github-actions/auth@v3
         with:
+          create_credentials_file: true
           project_id: hissa-tech-opt
           workload_identity_provider: projects/279042368566/locations/global/workloadIdentityPools/github-pool/providers/github
           service_account: hissatech-aqar-agent@hissa-tech-opt.iam.gserviceaccount.com
@@ -27,14 +28,24 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Install packages
+      - name: Install Python packages
         run: |
-          pip install gspread google-auth playwright
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Install Playwright Chromium
+        run: |
           playwright install --with-deps chromium
 
-      - name: Run Aqar extractor
+      - name: Extract Aqar phone numbers
         env:
           GOOGLE_SHEET_ID: ${{ secrets.GOOGLE_SHEET_ID }}
-          SHEET_NAME: Riyadh
+
+          # Leave empty to use the first tab automatically
+          SHEET_NAME: ""
+
+          MIN_DELAY: "3"
+          MAX_DELAY: "7"
+
         run: |
           python extract_aqar_phones.py
