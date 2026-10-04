@@ -1,4 +1,4 @@
-name: Aqar Phone Extractor
+name: Aqar Phone Extractor - Debug 10
 
 on:
   workflow_dispatch:
@@ -29,37 +29,46 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Install Python packages
+      - name: Install packages
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Install Playwright Chromium
+      - name: Install Chromium
         run: |
           playwright install --with-deps chromium
 
-      - name: Restore Aqar logged-in session
+      - name: Restore Aqar session
         env:
           AQAR_STORAGE_STATE: ${{ secrets.AQAR_STORAGE_STATE }}
         run: |
           printf '%s' "$AQAR_STORAGE_STATE" > aqar_storage_state.json
 
-      - name: Check Aqar session file
+      - name: Verify Aqar session
         run: |
           if [ -s aqar_storage_state.json ]; then
-            echo "Aqar storage state restored successfully."
+            echo "Aqar session restored."
           else
-            echo "ERROR: Aqar storage state is empty."
+            echo "ERROR: Aqar session is empty."
             exit 1
           fi
 
-      - name: Extract PROCEED Aqar phones
+      - name: Test first 10 PROCEED listings
         env:
           GOOGLE_SHEET_ID: ${{ secrets.GOOGLE_SHEET_ID }}
           AQAR_STORAGE_STATE_FILE: aqar_storage_state.json
-          MIN_DELAY: "4"
-          MAX_DELAY: "8"
+          MAX_PROPERTIES_TO_TEST: "10"
+          DEBUG_DIR: "debug"
+          MIN_DELAY: "3"
+          MAX_DELAY: "5"
           PAGE_TIMEOUT: "45000"
-
         run: |
           python extract_aqar_phones.py
+
+      - name: Upload debug files
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: aqar-debug-10
+          path: debug/
+          if-no-files-found: warn
