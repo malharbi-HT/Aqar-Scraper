@@ -69,6 +69,8 @@ def load_source(name, ptype):
     src = local if os.path.exists(local) else f"{RAW}/{name}"
     print(f"  قراءة {name}  ({'محلي' if src == local else 'GitHub'})")
     df = pd.read_csv(src, encoding="utf-8-sig", low_memory=False)
+    # بعض الملفات فيها عمود property_type أصلًا (مثل listings_villa.csv): نستبدله
+    df = df.drop(columns=["property_type"], errors="ignore")
     df.insert(0, "property_type", ptype)
     return df
 
