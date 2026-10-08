@@ -50,6 +50,7 @@ jobs:
           name: riyadh-sale-link-check
           path: |
             riyadh_sale_*.csv
+            debug_pages/
           retention-days: 14
 
       - name: Commit progress + compressed results
