@@ -1,0 +1,65 @@
+name: Check Riyadh Sale Links
+
+on:
+  workflow_dispatch:
+    inputs:
+      limit:
+        description: "فحص أول N رابط فقط (0 = الكل)"
+        default: "0"
+      rate:
+        description: "طلبات بالثانية"
+        default: "5"
+
+concurrency:
+  group: check-riyadh-sale-links
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: pip install pandas requests
+
+      - name: Merge + check links
+        run: |
+          python riyadh_sale_merge_and_check.py \
+            --limit "${{ github.event.inputs.limit || '0' }}" \
+            --rate "${{ github.event.inputs.rate || '5' }}"
+
+      - name: Package outputs
+        if: always()
+        run: |
+          mkdir -p data/link_check
+          [ -f riyadh_sale_check_progress.csv ] && cp riyadh_sale_check_progress.csv data/link_check/
+          for f in riyadh_sale_clean riyadh_sale_cancelled riyadh_sale_unverified; do
+            [ -f $f.csv ] && gzip -c $f.csv > data/link_check/$f.csv.gz || true
+          done
+
+      - name: Upload full results (artifact)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: riyadh-sale-link-check
+          path: |
+            riyadh_sale_*.csv
+          retention-days: 14
+
+      - name: Commit progress + compressed results
+        if: always()
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add data/link_check/
+          git commit -m "Riyadh sale: link check results" || echo "No changes"
+          for i in 1 2 3 4 5; do
+            git pull --rebase origin main && git push && break
+            sleep 5
+          done
