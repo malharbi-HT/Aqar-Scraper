@@ -103,9 +103,33 @@ class Limiter:
             time.sleep(t - now)
 
 
+_STRIP = re.compile(r"<(script|style|noscript|template)\b.*?</\1>", re.S | re.I)
+_TAGS = re.compile(r"<[^>]+>")
+
+
+def visible_text(html):
+    """النص الظاهر للمستخدم فقط. مهم: نحذف <script> لأن عقار يحط فيه ملفات ترجمة
+    وبيانات JSON فيها كلمات مثل «مغلق» و«منتهي» في كل الصفحات (حتى الشغالة)."""
+    return _TAGS.sub(" ", _STRIP.sub(" ", html))
+
+
+_dumped = {}
+
+
+def _dump(status, url, html):
+    """يحفظ أول 3 صفحات لكل حالة غير «شغال» في مجلد debug_pages لمراجعة العبارات."""
+    if _dumped.get(status, 0) >= 3:
+        return
+    _dumped[status] = _dumped.get(status, 0) + 1
+    os.makedirs("debug_pages", exist_ok=True)
+    with open(f"debug_pages/{status}_{_dumped[status]}.html", "w", encoding="utf-8") as f:
+        f.write(f"<!-- {url} -->\n" + html)
+
+
 def classify_body(body):
+    text = visible_text(body)
     for status, phrases in STATUS_HINTS:
-        if any(ph in body for ph in phrases):
+        if any(ph in text for ph in phrases):
             return status
     return None
 
@@ -133,13 +157,14 @@ def check_one(session, url, limiter, retries=3):
                     return UNVERIFIED, code        # طلب تسجيل دخول
                 found = classify_body(r.text)
                 if found:
+                    _dump(found, url, r.text)
                     return found, code
                 # تحويل إلى صفحة قائمة (بدون رقم الإعلان) = غير متوفر
                 want = re.search(r"(\d{5,})/?$", url)
                 got = re.search(r"(\d{5,})/?$", final)
                 if want and (not got or got.group(1) != want.group(1)):
                     return "غير متوفر", code
-                if len(r.text) < 5000:
+                if len(visible_text(r.text)) < 300:
                     return UNVERIFIED, code        # صفحة فاضية: ما نحكم عليها
                 return ACTIVE, code
             return UNVERIFIED, code
