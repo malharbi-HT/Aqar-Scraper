@@ -39,7 +39,7 @@ jobs:
         run: |
           mkdir -p data/link_check
           [ -f riyadh_sale_check_progress.csv ] && cp riyadh_sale_check_progress.csv data/link_check/
-          for f in riyadh_sale_clean riyadh_sale_cancelled riyadh_sale_unverified; do
+          for f in riyadh_sale_clean riyadh_sale_live_only riyadh_sale_cancelled riyadh_sale_unverified; do
             [ -f $f.csv ] && gzip -c $f.csv > data/link_check/$f.csv.gz || true
           done
 
